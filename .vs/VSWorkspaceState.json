@@ -1,0 +1,16 @@
+{
+  "ExpandedNodes": [
+    "",
+    "\\Core",
+    "\\Core\\DTOs",
+    "\\Core\\Enums",
+    "\\Core\\Interfaces",
+    "\\Hubs",
+    "\\Infrastructure",
+    "\\Infrastructure\\Data",
+    "\\Infrastructure\\Repositories",
+    "\\Infrastructure\\Services"
+  ],
+  "SelectedNode": "\\Hubs\\NotificationHub.cs",
+  "PreviewInSolutionExplorer": false
+}
