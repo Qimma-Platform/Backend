@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using ELearningPlatform.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
@@ -177,15 +177,32 @@ namespace ELearningPlatform.Controllers
                                 instructor.WalletBalance += instructorShare;
                             }
 
+                            var student = await _context.Users.FindAsync(studentId);
+                            string sName = student?.Username ?? "طالب";
+                            decimal platformShare = totalPaid * 0.20m;
+
                             // إرسال إشعار للمعلم بانضمام طالب جديد
                             var notifyTeacher = new Notification
                             {
                                 UserId = course.InstructorId,
-                                Message = $"طالب جديد انضم! لقد قام طالب بالاشتراك في كورس '{course.Title}'.",
+                                Message = $"طالب جديد انضم! لقد قام الطالب '{sName}' بالاشتراك في كورس '{course.Title}'.",
                                 CreatedAt = DateTime.UtcNow,
                                 IsRead = false
                             };
                             _context.Notifications.Add(notifyTeacher);
+
+                            // إرسال إشعار للمشرفين
+                            var adminIds = await _context.Users.Where(u => (int)u.Role == 2).Select(u => u.Id).ToListAsync();
+                            foreach (var aId in adminIds)
+                            {
+                                _context.Notifications.Add(new Notification
+                                {
+                                    UserId = aId,
+                                    Message = $"ENROLLMENT_PAID||اشتراك كورس مدفوع: قام الطالب '{sName}' بالاشتراك في كورس '{course.Title}' بمبلغ {totalPaid} ج.م (نسبة المنصة: {platformShare} ج.م، نسبة المعلم: {instructorShare} ج.م)||Paid Enrollment: Student '{sName}' enrolled in course '{course.Title}' for {totalPaid} EGP",
+                                    CreatedAt = DateTime.UtcNow,
+                                    IsRead = false
+                                });
+                            }
 
                             await _context.SaveChangesAsync();
                             Console.WriteLine($"🎉 Success: Student {studentId} successfully enrolled in Course {courseId}. Instructor earned {instructorShare} EGP.");

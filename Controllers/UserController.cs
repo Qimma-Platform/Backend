@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
@@ -146,11 +146,35 @@ namespace ELearningPlatform.Controllers
                     price = c.Price,
                     isFree = c.IsFree,
                     discountPercentage = c.DiscountPercentage,
+                    rating = c.Rating,
+                    totalRatingsCount = c.TotalRatingsCount,
                     instructorName = teacher.Username,
                     instructorId = teacher.Id
                 }).ToListAsync();
 
-            return Ok(new { teacher, courses });
+            var teacherCourseIds = courses.Select(c => c.id).ToList();
+            var ratings = await _context.CourseRatings
+                .Where(r => teacherCourseIds.Contains(r.CourseId))
+                .ToListAsync();
+
+            double avgRating = 0;
+            int totalRatingsCount = 0;
+            if (ratings.Any())
+            {
+                avgRating = Math.Round(ratings.Average(r => r.Rating), 1);
+                totalRatingsCount = ratings.Count;
+            }
+            else
+            {
+                var ratedCourses = courses.Where(c => c.rating.HasValue && c.rating.Value > 0).ToList();
+                if (ratedCourses.Any())
+                {
+                    avgRating = Math.Round((double)ratedCourses.Average(c => c.rating!.Value), 1);
+                    totalRatingsCount = ratedCourses.Sum(c => c.totalRatingsCount);
+                }
+            }
+
+            return Ok(new { teacher, courses, rating = avgRating, totalRatingsCount });
         }
 
         [HttpGet("teachers")]
@@ -169,6 +193,58 @@ namespace ELearningPlatform.Controllers
                 }).ToList();
 
             return Ok(teachers);
+        }
+
+        [HttpGet("students")]
+        [Authorize]
+        public async Task<IActionResult> GetAllStudents()
+        {
+            var userIdString = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            var roleString = User.FindFirstValue(ClaimTypes.Role);
+
+            if (int.TryParse(userIdString, out int teacherId) && (roleString == "Teacher" || roleString == "1"))
+            {
+                var teacherCourseIds = await _context.Courses
+                    .Where(c => c.InstructorId == teacherId)
+                    .Select(c => c.Id)
+                    .ToListAsync();
+
+                var enrolledStudentIds = await _context.CourseEnrollments
+                    .Where(ce => teacherCourseIds.Contains(ce.CourseId))
+                    .Select(ce => ce.StudentId)
+                    .Distinct()
+                    .ToListAsync();
+
+                var studentsForTeacher = await _context.Users
+                    .AsNoTracking()
+                    .Where(u => enrolledStudentIds.Contains(u.Id))
+                    .Select(u => new {
+                        u.Id,
+                        name = u.Username,
+                        u.Email,
+                        phoneNumber = u.PhoneNumber,
+                        u.ProfileImage,
+                        u.TotalXP,
+                        enrolledCoursesCount = _context.CourseEnrollments.Count(ce => teacherCourseIds.Contains(ce.CourseId) && ce.StudentId == u.Id)
+                    }).ToListAsync();
+
+                return Ok(studentsForTeacher);
+            }
+
+            var students = await _context.Users
+                .AsNoTracking()
+                .Where(u => u.Role.ToString() == "Student" || ((int)u.Role) == 0)
+                .Select(u => new {
+                    u.Id,
+                    name = u.Username,
+                    u.Email,
+                    phoneNumber = u.PhoneNumber,
+                    u.ProfileImage,
+                    u.TotalXP,
+                    enrolledCoursesCount = _context.CourseEnrollments.Count(ce => ce.StudentId == u.Id)
+                }).ToListAsync();
+
+            return Ok(students);
         }
     }
 

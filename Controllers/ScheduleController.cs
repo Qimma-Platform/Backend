@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ELearningPlatform.Core.Entities;
@@ -82,6 +82,13 @@ namespace ELearningPlatform.Controllers
         [HttpPost]
         public async Task<IActionResult> CreateEvent([FromBody] ScheduleEventDto dto)
         {
+            if (dto.Title != null && dto.Title.StartsWith(" "))
+                return BadRequest(new { message = "Title cannot start with a space." });
+            if (dto.Description != null && dto.Description.StartsWith(" "))
+                return BadRequest(new { message = "Description cannot start with a space." });
+            if (dto.EventType != null && dto.EventType.StartsWith(" "))
+                return BadRequest(new { message = "EventType cannot start with a space." });
+
             var userIdString = User.FindFirstValue(ClaimTypes.NameIdentifier);
             if (!int.TryParse(userIdString, out int teacherId)) return Unauthorized();
 
@@ -114,7 +121,7 @@ namespace ELearningPlatform.Controllers
                     notifications.Add(new Notification
                     {
                         UserId = studentId,
-                        Message = $"تم إضافة موعد جديد ({dto.EventType}) بعنوان '{dto.Title}' لكورس '{course.Title}'",
+                        Message = $"NEW_SCHEDULE||{dto.EventType}||{dto.Title}||{course.Title}||{course.Id}",
                         CreatedAt = DateTime.UtcNow,
                         IsRead = false
                     });

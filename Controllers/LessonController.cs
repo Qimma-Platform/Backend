@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
@@ -102,7 +102,7 @@ namespace ELearningPlatform.Controllers
                     notifications.Add(new Notification
                     {
                         UserId = studentId,
-                        Message = $"تم نشر درس جديد بعنوان '{lesson.Title}' في كورس '{course.Title}'. تفقده الآن!",
+                        Message = $"NEW_LESSON||{lesson.Id}||{lesson.Title}||{course.Id}||{course.Title}",
                         CreatedAt = DateTime.UtcNow,
                         IsRead = false
                     });

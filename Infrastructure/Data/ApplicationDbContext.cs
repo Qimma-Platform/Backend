@@ -1,4 +1,4 @@
-﻿using ELearningPlatform.Core.Entities;
+using ELearningPlatform.Core.Entities;
 using Microsoft.EntityFrameworkCore;
 using ELearningPlatform.Entities;
 
@@ -26,6 +26,7 @@ namespace ELearningPlatform.Infrastructure.Data
         public DbSet<AssignmentQuestion> AssignmentQuestions { get; set; }
         public DbSet<AssignmentSubmission> AssignmentSubmissions { get; set; }
         public DbSet<AssignmentAnswer> AssignmentAnswers { get; set; }
+        public DbSet<AuditLog> AuditLogs { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -45,6 +46,18 @@ namespace ELearningPlatform.Infrastructure.Data
                 .WithMany(c => c.Enrollments)
                 .HasForeignKey(ce => ce.CourseId)
                 .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<Course>()
+                .Property(c => c.Price)
+                .HasPrecision(18, 2);
+
+            modelBuilder.Entity<Course>()
+                .Property(c => c.DiscountPercentage)
+                .HasPrecision(18, 2);
+
+            modelBuilder.Entity<User>()
+                .Property(u => u.WalletBalance)
+                .HasPrecision(18, 2);
 
             modelBuilder.Entity<Course>()
                 .HasOne(c => c.Instructor)

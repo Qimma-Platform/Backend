@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Security.Claims;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
@@ -103,8 +103,8 @@ namespace ELearningPlatform.Controllers
         [HttpGet("student")]
         public async Task<IActionResult> GetStudentAssignments()
         {
-            var (pending, completed) = await _assignmentService.GetStudentAssignmentsAsync(GetUserId());
-            return Ok(new { Pending = pending, Completed = completed });
+            var (pending, missed, completed) = await _assignmentService.GetStudentAssignmentsAsync(GetUserId());
+            return Ok(new { Pending = pending, Missed = missed, Completed = completed });
         }
 
         [HttpGet("grading/course/{courseId}/student/{studentId}")]

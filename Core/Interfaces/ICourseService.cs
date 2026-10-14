@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using ELearningPlatform.Core.DTOs;
 
@@ -11,5 +11,6 @@ namespace ELearningPlatform.Core.Interfaces
         Task<bool> EnrollInCourseAsync(int studentId, int courseId);
         Task<IEnumerable<CourseResponseDto>> GetStudentCoursesAsync(int studentId);
         Task<IEnumerable<CourseResponseDto>> GetInstructorCoursesAsync(int instructorId);
+        Task<CourseResponseDto?> UpdateCourseAsync(int courseId, UpdateCourseDto request, int instructorId);
     }
 }

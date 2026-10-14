@@ -1,4 +1,4 @@
-﻿using ELearningPlatform.Core.Enums;
+using ELearningPlatform.Core.Enums;
 
 namespace ELearningPlatform.Core.DTOs
 {
@@ -34,6 +34,7 @@ namespace ELearningPlatform.Core.DTOs
     public class ResetPasswordDto
     {
         public string Email { get; set; } = string.Empty;
+        public string? Token { get; set; }
         public string NewPassword { get; set; } = string.Empty;
     }
 

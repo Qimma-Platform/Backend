@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace ELearningPlatform.Core.Entities
@@ -7,7 +7,7 @@ namespace ELearningPlatform.Core.Entities
     {
         public int Id { get; set; }
         public required string Title { get; set; }
-        public required string Description { get; set; }
+        public string? Description { get; set; }
         public string? CoverImageUrl { get; set; }
         public int InstructorId { get; set; }
         public User? Instructor { get; set; }

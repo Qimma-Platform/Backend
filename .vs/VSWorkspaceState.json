@@ -1,9 +1,9 @@
 {
   "ExpandedNodes": [
     "",
+    "\\Controllers",
     "\\Core",
     "\\Core\\DTOs",
-    "\\Core\\Enums",
     "\\Core\\Interfaces",
     "\\Hubs",
     "\\Infrastructure",
@@ -11,6 +11,6 @@
     "\\Infrastructure\\Repositories",
     "\\Infrastructure\\Services"
   ],
-  "SelectedNode": "\\Hubs\\NotificationHub.cs",
+  "SelectedNode": "\\Controllers\\AuthController.cs",
   "PreviewInSolutionExplorer": false
 }

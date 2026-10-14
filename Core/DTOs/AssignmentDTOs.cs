@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
 namespace ELearningPlatform.Core.DTOs
@@ -84,5 +84,7 @@ namespace ELearningPlatform.Core.DTOs
         public string QuestionType { get; set; } = string.Empty;
         public string AnswerText { get; set; } = string.Empty;
         public int? Score { get; set; }
+        public string? CorrectAnswer { get; set; }
+        public bool? IsCorrect { get; set; }
     }
 }

@@ -1,9 +1,9 @@
-﻿namespace ELearningPlatform.Core.Enums
+namespace ELearningPlatform.Core.Enums
 {
     public enum UserRole
     {
-        Admin,
-        Instructor,
-        Student
+        Student = 0,
+        Instructor = 1,
+        Admin = 2
     }
 }

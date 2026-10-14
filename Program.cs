@@ -138,6 +138,51 @@ builder.Services.AddTransient<IEmailService, EmailService>();
 
 var app = builder.Build();
 
+using (var scope = app.Services.CreateScope())
+{
+    var context = scope.ServiceProvider.GetRequiredService<ELearningPlatform.Infrastructure.Data.ApplicationDbContext>();
+    try
+    {
+        context.Database.ExecuteSqlRaw(@"
+            IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'AuditLogs')
+            BEGIN
+                CREATE TABLE AuditLogs (
+                    Id INT IDENTITY(1,1) PRIMARY KEY,
+                    AdminId INT NOT NULL,
+                    AdminUsername NVARCHAR(100) NOT NULL,
+                    Action NVARCHAR(50) NOT NULL,
+                    Entity NVARCHAR(50) NOT NULL,
+                    Details NVARCHAR(MAX) NOT NULL,
+                    Timestamp DATETIME2 NOT NULL DEFAULT GETUTCDATE()
+                );
+            END
+        ");
+
+        var admin = context.Users.FirstOrDefault(u => u.Email == "admin@fluencyfirst.com");
+        if (admin == null)
+        {
+            context.Users.Add(new ELearningPlatform.Core.Entities.User
+            {
+                Username = "Super Admin",
+                Email = "admin@fluencyfirst.com",
+                PasswordHash = BCrypt.Net.BCrypt.HashPassword("Admin@12345"),
+                Role = ELearningPlatform.Core.Enums.UserRole.Admin,
+                IsEmailConfirmed = true,
+                TotalXP = 0
+            });
+            context.SaveChanges();
+        }
+        else
+        {
+            admin.PasswordHash = BCrypt.Net.BCrypt.HashPassword("Admin@12345");
+            admin.Role = ELearningPlatform.Core.Enums.UserRole.Admin;
+            admin.IsEmailConfirmed = true;
+            context.SaveChanges();
+        }
+    }
+    catch { }
+}
+
 // 3. PERFORMANCE FIX: Use Response Compression Middleware
 app.UseResponseCompression();
 

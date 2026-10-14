@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using ELearningPlatform.Core.Entities;
 using ELearningPlatform.Infrastructure.Data;
@@ -27,6 +27,11 @@ namespace ELearningPlatform.Controllers
         {
             var userIdString = User.FindFirstValue(ClaimTypes.NameIdentifier);
             if (string.IsNullOrEmpty(userIdString) || !int.TryParse(userIdString, out int teacherId)) return Unauthorized();
+
+            if (model.Questions != null && model.Questions.Any(q => (q.Text != null && q.Text.StartsWith(" ")) || (q.Options != null && q.Options.Any(o => o != null && o.StartsWith(" ")))))
+            {
+                return BadRequest(new { message = "Question text and options cannot start with a space." });
+            }
 
             var existingTasks = _context.CourseTasks.Where(t => t.LessonId == model.LessonId).ToList();
             if (existingTasks.Any())
@@ -73,7 +78,7 @@ namespace ELearningPlatform.Controllers
                         {
                             UserId = sId,
                             // إرسال كود الإشعار ليتم ترجمته في الفرونت إند
-                            Message = $"NEW_QUIZ||{lessonInfo.Title}||{courseInfo?.Title}",
+                            Message = $"NEW_QUIZ||{lessonInfo.Title}||{courseInfo?.Title}||{lessonInfo.Id}||{courseInfo?.Id}",
                             CreatedAt = DateTime.UtcNow,
                             IsRead = false
                         });

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Threading.Tasks;
 using ELearningPlatform.Core.DTOs;
 using ELearningPlatform.Core.Interfaces;
@@ -71,7 +71,8 @@ namespace ELearningPlatform.Controllers
         {
             try
             {
-                string resetLink = $"http://localhost:4200/reset-password?email={model.Email}";
+                string resetToken = _authService.GeneratePasswordResetToken(model.Email);
+                string resetLink = $"http://localhost:4200/reset-password?token={resetToken}";
 
                 string emailBody = $@"
                     <div style='font-family: Arial, sans-serif; padding: 20px; color: #333; text-align: center;'>

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IdentityModel.Tokens.Jwt;
 using System.Linq;
 using System.Security.Claims;
@@ -6,6 +6,7 @@ using System.Text;
 using System.Threading.Tasks;
 using ELearningPlatform.Core.DTOs;
 using ELearningPlatform.Core.Entities;
+using ELearningPlatform.Core.Enums;
 using ELearningPlatform.Core.Interfaces;
 using Microsoft.Extensions.Configuration;
 using Microsoft.IdentityModel.Tokens;
@@ -57,6 +58,28 @@ namespace ELearningPlatform.Infrastructure.Services
 
             await _unitOfWork.Users.AddAsync(user);
             await _unitOfWork.CompleteAsync();
+
+            // Notify admins of new user registration
+            try
+            {
+                var allUsers = await _unitOfWork.Users.GetAllAsync();
+                var admins = allUsers.Where(u => (int)u.Role == 2).ToList();
+                string roleStrAr = request.Role == UserRole.Instructor ? "معلم" : "طالب";
+                string roleStrEn = request.Role == UserRole.Instructor ? "Instructor" : "Student";
+                string notifMsg = $"NEW_USER||انضمام {roleStrAr} جديد: قام {roleStrAr} '{user.Username}' بإنشاء حساب جديد على المنصة ({user.Email})||New {roleStrEn} Joined: '{user.Username}' ({user.Email})";
+                foreach (var admin in admins)
+                {
+                    await _unitOfWork.Notifications.AddAsync(new Notification
+                    {
+                        UserId = admin.Id,
+                        Message = notifMsg,
+                        CreatedAt = DateTime.UtcNow,
+                        IsRead = false
+                    });
+                }
+                await _unitOfWork.CompleteAsync();
+            }
+            catch { }
 
             // 3. Send OTP Email
             string emailBody = $@"
@@ -131,8 +154,43 @@ namespace ELearningPlatform.Infrastructure.Services
 
         public async Task<bool> ResetPasswordAsync(ResetPasswordDto request)
         {
+            string email = request.Email;
+
+            if (!string.IsNullOrWhiteSpace(request.Token))
+            {
+                try
+                {
+                    var keyString = _config["Jwt:Key"];
+                    var tokenHandler = new JwtSecurityTokenHandler();
+                    var validationParameters = new TokenValidationParameters
+                    {
+                        ValidateIssuerSigningKey = true,
+                        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(keyString!)),
+                        ValidateIssuer = !string.IsNullOrEmpty(_config["Jwt:Issuer"]),
+                        ValidIssuer = _config["Jwt:Issuer"],
+                        ValidateAudience = !string.IsNullOrEmpty(_config["Jwt:Audience"]),
+                        ValidAudience = _config["Jwt:Audience"],
+                        ValidateLifetime = true,
+                        ClockSkew = TimeSpan.FromMinutes(5)
+                    };
+
+                    var principal = tokenHandler.ValidateToken(request.Token, validationParameters, out _);
+                    var emailClaim = principal.FindFirst(ClaimTypes.Email)?.Value;
+                    if (!string.IsNullOrEmpty(emailClaim))
+                    {
+                        email = emailClaim;
+                    }
+                }
+                catch
+                {
+                    return false;
+                }
+            }
+
+            if (string.IsNullOrEmpty(email)) return false;
+
             var users = await _unitOfWork.Users.GetAllAsync();
-            var user = users.FirstOrDefault(u => u.Email == request.Email);
+            var user = users.FirstOrDefault(u => u.Email.Equals(email, StringComparison.OrdinalIgnoreCase));
 
             if (user == null)
                 return false;
@@ -143,6 +201,32 @@ namespace ELearningPlatform.Infrastructure.Services
             await _unitOfWork.CompleteAsync();
 
             return true;
+        }
+
+        public string GeneratePasswordResetToken(string email)
+        {
+            var keyString = _config["Jwt:Key"];
+            if (string.IsNullOrEmpty(keyString)) throw new InvalidOperationException("JWT Key is missing.");
+
+            var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(keyString));
+            var credentials = new SigningCredentials(securityKey, SecurityAlgorithms.HmacSha256);
+
+            var claims = new[]
+            {
+                new Claim(ClaimTypes.Email, email),
+                new Claim("purpose", "password_reset")
+            };
+
+            var expiration = DateTime.UtcNow.AddHours(2);
+
+            var token = new JwtSecurityToken(
+                issuer: _config["Jwt:Issuer"],
+                audience: _config["Jwt:Audience"],
+                claims: claims,
+                expires: expiration,
+                signingCredentials: credentials);
+
+            return new JwtSecurityTokenHandler().WriteToken(token);
         }
 
         private string GenerateJwtToken(User user, bool rememberMe)

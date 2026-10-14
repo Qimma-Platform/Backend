@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System;
 using System.Security.Claims;
@@ -43,7 +43,55 @@ namespace ELearningPlatform.Controllers
                 }
 
                 int instructorId = int.Parse(userIdString);
+
+                if (request.Title != null && request.Title.StartsWith(" "))
+                    return BadRequest(new { message = "Course title cannot start with a space." });
+                if (request.Description != null && request.Description.StartsWith(" "))
+                    return BadRequest(new { message = "Course description cannot start with a space." });
+                if (!request.IsFree && request.Price <= 0)
+                    return BadRequest(new { message = "Course price must be greater than zero for paid courses." });
+                if (request.DiscountPercentage < 0 || request.DiscountPercentage > 100)
+                    return BadRequest(new { message = "Discount percentage must be between 0 and 100." });
+
                 var course = await _courseService.CreateCourseAsync(request, instructorId);
+                return Ok(course);
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        [HttpPut("{id}")]
+        public async Task<IActionResult> UpdateCourse(int id, [FromBody] UpdateCourseDto request)
+        {
+            try
+            {
+                var role = User.FindFirstValue(ClaimTypes.Role) ?? User.FindFirstValue("role");
+                var userIdString = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub");
+
+                if (string.IsNullOrEmpty(userIdString))
+                    return Unauthorized(new { message = "Invalid token: User ID not found" });
+
+                if (role != "Teacher" && role != "1" && role != "Instructor")
+                {
+                    return StatusCode(403, new { message = $"Forbidden: Your role is '{role}', but Teacher is required." });
+                }
+
+                if (request.Title != null && request.Title.StartsWith(" "))
+                    return BadRequest(new { message = "Course title cannot start with a space." });
+                if (request.Description != null && request.Description.StartsWith(" "))
+                    return BadRequest(new { message = "Course description cannot start with a space." });
+                if (request.IsFree.HasValue && !request.IsFree.Value && request.Price.HasValue && request.Price.Value <= 0)
+                    return BadRequest(new { message = "Course price must be greater than zero for paid courses." });
+                if (request.DiscountPercentage.HasValue && (request.DiscountPercentage.Value < 0 || request.DiscountPercentage.Value > 100))
+                    return BadRequest(new { message = "Discount percentage must be between 0 and 100." });
+
+                int instructorId = int.Parse(userIdString);
+                var course = await _courseService.UpdateCourseAsync(id, request, instructorId);
+                if (course == null)
+                    return NotFound(new { message = "Course not found or you are not authorized to update this course." });
+
                 return Ok(course);
             }
             catch (Exception ex)
@@ -70,14 +118,33 @@ namespace ELearningPlatform.Controllers
             var course = await _context.Courses.FindAsync(courseId);
             if (course != null)
             {
+                var student = await _context.Users.FindAsync(studentId);
+                var studentDisplay = student?.Username ?? studentName ?? "طالب";
+                bool isFree = course.IsFree || course.Price == 0;
+                string enrollTypeAr = isFree ? "مجاني" : $"مدفوع ({course.Price} ج.م)";
+                string enrollTypeEn = isFree ? "Free" : $"Paid ({course.Price} EGP)";
+
                 var teacherNotif = new Notification
                 {
                     UserId = course.InstructorId,
-                    Message = $"طالب جديد انضم! لقد قام طالب بالاشتراك في كورس '{course.Title}'.",
+                    Message = $"طالب جديد انضم! لقد قام الطالب '{studentDisplay}' بالاشتراك في كورس '{course.Title}'.",
                     CreatedAt = DateTime.UtcNow,
                     IsRead = false
                 };
                 _context.Notifications.Add(teacherNotif);
+
+                var adminIds = await _context.Users.Where(u => (int)u.Role == 2).Select(u => u.Id).ToListAsync();
+                foreach (var aId in adminIds)
+                {
+                    _context.Notifications.Add(new Notification
+                    {
+                        UserId = aId,
+                        Message = $"ENROLLMENT||اشتراك جديد ({enrollTypeAr}): قام الطالب '{studentDisplay}' بالاشتراك في كورس '{course.Title}'||New Enrollment ({enrollTypeEn}): Student '{studentDisplay}' enrolled in course '{course.Title}'",
+                        CreatedAt = DateTime.UtcNow,
+                        IsRead = false
+                    });
+                }
+
                 await _context.SaveChangesAsync();
             }
 
@@ -109,6 +176,24 @@ namespace ELearningPlatform.Controllers
         public async Task<IActionResult> MarkLessonAsCompleted(int lessonId)
         {
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (!string.IsNullOrEmpty(userId) && int.TryParse(userId, out int studentId))
+            {
+                var existingAttempt = await _context.QuizAttempts
+                    .FirstOrDefaultAsync(qa => qa.StudentId == studentId && qa.LessonId == lessonId);
+
+                if (existingAttempt == null)
+                {
+                    _context.QuizAttempts.Add(new ELearningPlatform.Core.Entities.QuizAttempt
+                    {
+                        StudentId = studentId,
+                        LessonId = lessonId,
+                        Score = 1,
+                        TotalQuestions = 1,
+                        AttemptDate = DateTime.UtcNow
+                    });
+                    await _context.SaveChangesAsync();
+                }
+            }
             return Ok(new { message = "Lesson marked as completed successfully" });
         }
 

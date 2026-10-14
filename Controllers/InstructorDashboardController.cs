@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
@@ -7,6 +7,7 @@ using System.Linq;
 using System;
 using System.Threading.Tasks;
 using System.Collections.Generic;
+using ELearningPlatform.Core.Entities;
 
 namespace ELearningPlatform.Controllers
 {
@@ -35,10 +36,11 @@ namespace ELearningPlatform.Controllers
             var currentMonthStart = new DateTime(now.Year, now.Month, 1);
             var lastMonthStart = currentMonthStart.AddMonths(-1);
 
-            // 1. Get Course IDs for the instructor
+            // 1. Get Course IDs and Ratings for the instructor (lightweight projection)
             var courses = await _context.Courses
                 .AsNoTracking()
                 .Where(c => c.InstructorId == instructorId)
+                .Select(c => new { c.Id, c.Rating })
                 .ToListAsync();
 
             var courseIds = courses.Select(c => c.Id).ToList();
@@ -51,54 +53,76 @@ namespace ELearningPlatform.Controllers
             }
 
             // 2. High-Performance Metrics (Single Queries)
-            var totalStudentsCount = await _context.CourseEnrollments
-                .Where(e => courseIds.Contains(e.CourseId))
-                .Select(e => e.StudentId)
-                .Distinct()
-                .CountAsync();
+            int totalStudentsCount = 0;
+            int totalLessonsCount = 0;
+            int totalQuizzesCount = 0;
 
-            var totalLessonsCount = await _context.Lessons
-                .Where(l => courseIds.Contains(l.CourseId))
-                .CountAsync();
+            if (courseIds.Count > 0)
+            {
+                totalStudentsCount = await _context.CourseEnrollments
+                    .Where(e => courseIds.Contains(e.CourseId))
+                    .Select(e => e.StudentId)
+                    .Distinct()
+                    .CountAsync();
 
-            // Safe fallback: Counts the number of active distinct lessons that have attempts tied to them
-            var totalQuizzesCount = await _context.QuizAttempts
-                .Where(qa => qa.Lesson != null && courseIds.Contains(qa.Lesson.CourseId))
-                .Select(qa => qa.LessonId)
-                .Distinct()
-                .CountAsync();
+                totalLessonsCount = await _context.Lessons
+                    .Where(l => courseIds.Contains(l.CourseId))
+                    .CountAsync();
 
-            var enrollments = await _context.CourseEnrollments
+                totalQuizzesCount = await _context.QuizAttempts
+                    .Where(qa => qa.Lesson != null && courseIds.Contains(qa.Lesson.CourseId))
+                    .Select(qa => qa.LessonId)
+                    .Distinct()
+                    .CountAsync();
+            }
+
+            var enrollments = courseIds.Count == 0 ? new List<EnrollmentMetricDto>() : await _context.CourseEnrollments
                 .AsNoTracking()
-                .Include(e => e.Student)
-                .Include(e => e.Course)
                 .Where(e => courseIds.Contains(e.CourseId))
+                .Select(e => new EnrollmentMetricDto
+                {
+                    EnrolledAt = e.EnrolledAt,
+                    StudentId = e.StudentId,
+                    StudentUsername = e.Student != null ? e.Student.Username : "طالب",
+                    CourseTitle = e.Course != null ? e.Course.Title : "كورس",
+                    CourseIsFree = e.Course != null && e.Course.IsFree,
+                    CoursePrice = e.Course != null ? e.Course.Price : 0m,
+                    CourseDiscount = e.Course != null ? e.Course.DiscountPercentage : 0m
+                })
                 .ToListAsync();
 
-            var recentActivities = await _context.QuizAttempts
+            var allAttempts = courseIds.Count == 0 ? new List<QuizAttempt>() : await _context.QuizAttempts
                 .AsNoTracking()
                 .Include(q => q.Student)
                 .Include(q => q.Lesson)
                 .Where(q => q.Lesson != null && courseIds.Contains(q.Lesson.CourseId))
-                .OrderByDescending(q => q.Id)
-                .Take(50)
-                .Select(q => new
-                {
-                    type = "quiz",
-                    messageAr = $"أنهى {(q.Student != null ? q.Student.Username : "طالب")} اختبار لدرس {(q.Lesson != null ? q.Lesson.Title : "غير معروف")} بدرجة {q.Score}",
-                    messageEn = $"{(q.Student != null ? q.Student.Username : "Student")} completed {(q.Lesson != null ? q.Lesson.Title : "Unknown")} quiz with score {q.Score}",
-                    date = DateTime.UtcNow
-                })
+                .OrderByDescending(q => q.AttemptDate)
                 .ToListAsync();
+
+            // Deduplicate: Each student completing a quiz for a lesson only appears once (latest attempt)
+            var deduplicatedAttempts = allAttempts
+                .GroupBy(q => new { q.StudentId, q.LessonId })
+                .Select(g => g.OrderByDescending(q => q.AttemptDate).First())
+                .OrderByDescending(q => q.AttemptDate)
+                .Take(50)
+                .ToList();
+
+            var recentActivities = deduplicatedAttempts.Select(q => (dynamic)new
+            {
+                type = "quiz",
+                messageAr = $"أنهى {(q.Student != null ? q.Student.Username : "طالب")} اختبار لدرس {(q.Lesson != null ? q.Lesson.Title : "غير معروف")} بدرجة {q.Score}",
+                messageEn = $"{(q.Student != null ? q.Student.Username : "Student")} completed {(q.Lesson != null ? q.Lesson.Title : "Unknown")} quiz with score {q.Score}",
+                date = q.AttemptDate
+            }).ToList();
 
             // 3. Calculate Real-Time Revenue & Growth
             decimal totalRevenue = enrollments
-                .Where(e => e.Course != null && !e.Course.IsFree)
-                .Sum(e => (e.Course!.Price * (1m - (e.Course.DiscountPercentage / 100m))) * 0.8m);
+                .Where(e => !e.CourseIsFree)
+                .Sum(e => (e.CoursePrice * (1m - (e.CourseDiscount / 100m))) * 0.8m);
 
             decimal monthlyRevenue = enrollments
-                .Where(e => e.Course != null && !e.Course.IsFree && e.EnrolledAt >= currentMonthStart)
-                .Sum(e => (e.Course!.Price * (1m - (e.Course.DiscountPercentage / 100m))) * 0.8m);
+                .Where(e => !e.CourseIsFree && e.EnrolledAt >= currentMonthStart)
+                .Sum(e => (e.CoursePrice * (1m - (e.CourseDiscount / 100m))) * 0.8m);
 
             var studentsThisMonth = enrollments.Where(e => e.EnrolledAt >= currentMonthStart).Select(e => e.StudentId).Distinct().Count();
             var studentsLastMonth = enrollments.Where(e => e.EnrolledAt >= lastMonthStart && e.EnrolledAt < currentMonthStart).Select(e => e.StudentId).Distinct().Count();
@@ -118,18 +142,35 @@ namespace ELearningPlatform.Controllers
                 .Take(100)
                 .Select(e => new
                 {
-                    studentName = (e.Student != null && e.Student.Username != null) ? e.Student.Username : "طالب",
-                    courseTitle = e.Course != null ? e.Course.Title : "كورس",
-                    amount = (e.Course != null && e.Course.IsFree) ? 0 :
-                             (e.Course != null ? Math.Round((e.Course.Price * (1m - (e.Course.DiscountPercentage / 100m))) * 0.8m, 2) : 0),
+                    studentName = e.StudentUsername,
+                    courseTitle = e.CourseTitle,
+                    amount = e.CourseIsFree ? 0 : Math.Round((e.CoursePrice * (1m - (e.CourseDiscount / 100m))) * 0.8m, 2),
                     date = e.EnrolledAt
                 })
                 .ToList();
 
-            // 4. Dynamic Chart Data Generation
+            // 4. Dynamic Real Chart Data Generation (New Enrollments & Course Completions)
+            var lessonCountsPerCourse = courseIds.Count == 0 ? new Dictionary<int, int>() : await _context.Lessons
+                .Where(l => courseIds.Contains(l.CourseId))
+                .GroupBy(l => l.CourseId)
+                .ToDictionaryAsync(g => g.Key, g => g.Count());
+
+            var studentCourseCompletions = allAttempts
+                .GroupBy(q => new { q.StudentId, CourseId = q.Lesson!.CourseId })
+                .Where(g => lessonCountsPerCourse.ContainsKey(g.Key.CourseId) &&
+                            lessonCountsPerCourse[g.Key.CourseId] > 0 &&
+                            g.Select(x => x.LessonId).Distinct().Count() >= lessonCountsPerCourse[g.Key.CourseId])
+                .Select(g => g.Max(x => x.AttemptDate))
+                .ToList();
+
+            // If no full course completions yet in db, use completed quiz milestones as completions
+            var completionsDates = studentCourseCompletions.Count > 0
+                ? studentCourseCompletions
+                : deduplicatedAttempts.Select(a => a.AttemptDate).ToList();
+
             var chartLabels = new List<string>();
-            var ongoingData = new List<int>();
-            var submittedData = new List<int>();
+            var newEnrollmentsData = new List<int>();
+            var courseCompletionsData = new List<int>();
 
             if (timeframe == "1year")
             {
@@ -139,8 +180,9 @@ namespace ELearningPlatform.Controllers
                     chartLabels.Add(targetMonth.ToString("MMM yyyy"));
 
                     int monthlyEnrollments = enrollments.Count(e => e.EnrolledAt.Year == targetMonth.Year && e.EnrolledAt.Month == targetMonth.Month);
-                    ongoingData.Add(monthlyEnrollments);
-                    submittedData.Add(monthlyEnrollments + new Random().Next(5, 20));
+                    int monthlyCompletions = completionsDates.Count(d => d.Year == targetMonth.Year && d.Month == targetMonth.Month);
+                    newEnrollmentsData.Add(monthlyEnrollments);
+                    courseCompletionsData.Add(monthlyCompletions);
                 }
             }
             else if (timeframe == "30days")
@@ -151,8 +193,9 @@ namespace ELearningPlatform.Controllers
                     chartLabels.Add(targetDate.ToString("dd MMM"));
 
                     int dailyEnrollments = enrollments.Count(e => e.EnrolledAt.Date == targetDate);
-                    ongoingData.Add(dailyEnrollments);
-                    submittedData.Add(dailyEnrollments + new Random().Next(0, 5));
+                    int dailyCompletions = completionsDates.Count(d => d.Date == targetDate);
+                    newEnrollmentsData.Add(dailyEnrollments);
+                    courseCompletionsData.Add(dailyCompletions);
                 }
             }
             else // 7days default
@@ -163,9 +206,84 @@ namespace ELearningPlatform.Controllers
                     chartLabels.Add(targetDate.ToString("dd MMM"));
 
                     int dailyEnrollments = enrollments.Count(e => e.EnrolledAt.Date == targetDate);
-                    ongoingData.Add(dailyEnrollments);
-                    submittedData.Add(dailyEnrollments + new Random().Next(2, 8));
+                    int dailyCompletions = completionsDates.Count(d => d.Date == targetDate);
+                    newEnrollmentsData.Add(dailyEnrollments);
+                    courseCompletionsData.Add(dailyCompletions);
                 }
+            }
+
+            // 5. Calculate Top Courses for Instructor (Your Top Courses widget)
+            var topCourses = new List<object>();
+            if (courseIds.Count > 0)
+            {
+                var instructorCourseDetails = await _context.Courses
+                    .AsNoTracking()
+                    .Where(c => c.InstructorId == instructorId)
+                    .Select(c => new
+                    {
+                        c.Id,
+                        c.Title,
+                        c.CoverImageUrl,
+                        c.Rating,
+                        TotalStudents = _context.CourseEnrollments.Count(ce => ce.CourseId == c.Id),
+                        TotalLessons = _context.Lessons.Count(l => l.CourseId == c.Id)
+                    })
+                    .OrderByDescending(c => c.TotalStudents)
+                    .ThenByDescending(c => c.Rating)
+                    .Take(100)
+                    .ToListAsync();
+
+                var calculatedCourses = new List<(int Id, string Title, int StudentsCount, int CompletionPercentage, string? CoverImageUrl)>();
+
+                foreach (var c in instructorCourseDetails)
+                {
+                    int completionPercentage = 0;
+                    if (c.TotalStudents > 0)
+                    {
+                        var completedAttemptsCount = await _context.QuizAttempts
+                            .Where(qa => qa.Lesson != null && qa.Lesson.CourseId == c.Id)
+                            .Select(qa => new { qa.StudentId, qa.LessonId })
+                            .Distinct()
+                            .CountAsync();
+
+                        var totalAssignmentsCount = await _context.Assignments
+                            .Where(a => a.CourseId == c.Id)
+                            .CountAsync();
+
+                        var completedAssignmentsCount = totalAssignmentsCount == 0 ? 0 : await _context.AssignmentSubmissions
+                            .Where(asub => asub.Assignment != null && asub.Assignment.CourseId == c.Id)
+                            .Select(asub => new { asub.StudentId, asub.AssignmentId })
+                            .Distinct()
+                            .CountAsync();
+
+                        int totalActivitiesPerStudent = c.TotalLessons + totalAssignmentsCount;
+                        int totalCompletedActivities = completedAttemptsCount + completedAssignmentsCount;
+                        int maxPossibleActivities = c.TotalStudents * totalActivitiesPerStudent;
+
+                        if (maxPossibleActivities > 0)
+                        {
+                            double ratio = (double)totalCompletedActivities / maxPossibleActivities;
+                            completionPercentage = (int)Math.Min(100, Math.Round(ratio * 100));
+                        }
+                    }
+
+                    calculatedCourses.Add((c.Id, c.Title, c.TotalStudents, completionPercentage, c.CoverImageUrl));
+                }
+
+                // Automatically sort from highest to lowest by completion percentage, then by enrolled students count
+                topCourses = calculatedCourses
+                    .OrderByDescending(c => c.CompletionPercentage)
+                    .ThenByDescending(c => c.StudentsCount)
+                    .ThenBy(c => c.Title)
+                    .Select(c => (object)new
+                    {
+                        id = c.Id,
+                        title = c.Title,
+                        studentsCount = c.StudentsCount,
+                        completionPercentage = c.CompletionPercentage,
+                        coverImageUrl = c.CoverImageUrl
+                    })
+                    .ToList();
             }
 
             return Ok(new
@@ -180,13 +298,27 @@ namespace ELearningPlatform.Controllers
                 instructorRating = instructorRating,
                 recentTransactions = recentTransactions,
                 activityFeed = recentActivities,
+                topCourses = topCourses,
                 chartData = new
                 {
                     labels = chartLabels,
-                    ongoing = ongoingData,
-                    submitted = submittedData
+                    newEnrollments = newEnrollmentsData,
+                    courseCompletions = courseCompletionsData,
+                    ongoing = newEnrollmentsData,
+                    submitted = courseCompletionsData
                 }
             });
         }
+    }
+
+    public class EnrollmentMetricDto
+    {
+        public DateTime EnrolledAt { get; set; }
+        public int StudentId { get; set; }
+        public string StudentUsername { get; set; } = string.Empty;
+        public string CourseTitle { get; set; } = string.Empty;
+        public bool CourseIsFree { get; set; }
+        public decimal CoursePrice { get; set; }
+        public decimal CourseDiscount { get; set; }
     }
 }

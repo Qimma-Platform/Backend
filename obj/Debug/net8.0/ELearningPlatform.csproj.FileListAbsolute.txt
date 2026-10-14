@@ -140,3 +140,4 @@ D:\Full Stack .Net\C#\ELearningPlatform\ELearningPlatform\obj\Debug\net8.0\ELear
 D:\Full Stack .Net\C#\ELearningPlatform\ELearningPlatform\obj\Debug\net8.0\ELearningPlatform.genruntimeconfig.cache
 D:\Full Stack .Net\C#\ELearningPlatform\ELearningPlatform\obj\Debug\net8.0\ref\ELearningPlatform.dll
 D:\Full Stack .Net\C#\ELearningPlatform\ELearningPlatform\bin\Debug\net8.0\ELearningPlatform.staticwebassets.runtime.json
+D:\Full Stack .Net\C#\ELearningPlatform\ELearningPlatform\obj\Debug\net8.0\ELearningPlatform.sourcelink.json

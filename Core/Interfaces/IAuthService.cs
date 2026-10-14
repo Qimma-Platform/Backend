@@ -1,4 +1,4 @@
-﻿using System.Threading.Tasks;
+using System.Threading.Tasks;
 using ELearningPlatform.Core.DTOs;
 
 namespace ELearningPlatform.Core.Interfaces
@@ -9,5 +9,6 @@ namespace ELearningPlatform.Core.Interfaces
         Task<AuthResponseDto> LoginAsync(LoginDto request);
         Task<AuthResponseDto> VerifyOtpAsync(VerifyOtpDto request);
         Task<bool> ResetPasswordAsync(ResetPasswordDto request);
+        string GeneratePasswordResetToken(string email);
     }
 }

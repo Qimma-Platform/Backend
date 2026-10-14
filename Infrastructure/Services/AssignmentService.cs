@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -51,6 +51,12 @@ namespace ELearningPlatform.Infrastructure.Services
 
         public async Task<AssignmentDto> CreateAssignmentAsync(int instructorId, CreateAssignmentDto dto)
         {
+            if (dto.Title != null && dto.Title.StartsWith(" "))
+                throw new ArgumentException("Title cannot start with a space.");
+
+            if (dto.Questions != null && dto.Questions.Any(q => q.QuestionText != null && q.QuestionText.StartsWith(" ")))
+                throw new ArgumentException("Question text cannot start with a space.");
+
             var course = await _context.Courses.FirstOrDefaultAsync(c => c.Id == dto.CourseId && c.InstructorId == instructorId);
             if (course == null) throw new UnauthorizedAccessException();
 
@@ -84,7 +90,7 @@ namespace ELearningPlatform.Infrastructure.Services
             var notifications = enrolledStudents.Select(studentId => new Notification
             {
                 UserId = studentId,
-                Message = $"NEW_ASSIGNMENT||{assignment.Title}||{course.Title}||{assignment.DueDate:yyyy-MM-dd}",
+                Message = $"NEW_ASSIGNMENT||{assignment.Title}||{course.Title}||{assignment.DueDate:yyyy-MM-dd}||{assignment.Id}||{course.Id}",
                 CreatedAt = DateTime.UtcNow,
                 IsRead = false
             });
@@ -122,6 +128,14 @@ namespace ELearningPlatform.Infrastructure.Services
 
             if (assignment == null) throw new KeyNotFoundException();
 
+            var isExpired = assignment.DueDate.HasValue && (assignment.DueDate.Value.Kind == DateTimeKind.Utc 
+                ? assignment.DueDate.Value < DateTime.UtcNow 
+                : (assignment.DueDate.Value < DateTime.Now && assignment.DueDate.Value < DateTime.UtcNow));
+            if (isExpired)
+            {
+                throw new InvalidOperationException("The deadline for this assignment has passed. Submissions are no longer accepted.");
+            }
+
             var submission = new AssignmentSubmission
             {
                 StudentId = studentId,
@@ -132,9 +146,23 @@ namespace ELearningPlatform.Infrastructure.Services
                     var question = assignment.Questions.FirstOrDefault(q => q.Id == a.AssignmentQuestionId);
                     int? score = null;
 
-                    if (question != null && question.Type.ToLower() == "mcq")
+                    if (question != null && (question.Type.ToLower() == "mcq" || question.Type.ToLower() == "quiz"))
                     {
-                        score = string.Equals(a.AnswerText, question.CorrectAnswer, StringComparison.OrdinalIgnoreCase) ? question.Score : 0;
+                        var studentAns = (a.AnswerText ?? string.Empty).Trim();
+                        var correctAns = (question.CorrectAnswer ?? string.Empty).Trim();
+
+                        bool isMatch = string.Equals(studentAns, correctAns, StringComparison.OrdinalIgnoreCase);
+                        if (!isMatch && !string.IsNullOrEmpty(question.Options) && int.TryParse(studentAns, out int optIdx))
+                        {
+                            var opts = question.Options.Split(',');
+                            if (optIdx >= 0 && optIdx < opts.Length)
+                            {
+                                isMatch = string.Equals(opts[optIdx].Trim(), correctAns, StringComparison.OrdinalIgnoreCase);
+                            }
+                        }
+
+                        var fullScore = question.Score > 0 ? question.Score : 1;
+                        score = isMatch ? fullScore : 0;
                     }
 
                     return new AssignmentAnswer
@@ -153,7 +181,7 @@ namespace ELearningPlatform.Infrastructure.Services
             var teacherNotification = new Notification
             {
                 UserId = assignment.Course.InstructorId,
-                Message = $"ASSIGNMENT_SUBMITTED||{student?.Username ?? "Student"}||{assignment.Title}||{assignment.Course.Title}",
+                Message = $"ASSIGNMENT_SUBMITTED||{student?.Username ?? "Student"}||{assignment.Title}||{assignment.Course.Title}||{assignment.CourseId}||{studentId}",
                 CreatedAt = DateTime.UtcNow,
                 IsRead = false
             };
@@ -174,6 +202,12 @@ namespace ELearningPlatform.Infrastructure.Services
             if (submission == null || submission.Assignment.Course.InstructorId != instructorId)
                 return false;
 
+            if (dto.Score < 0)
+                throw new ArgumentException("Score cannot be negative.");
+
+            if (submission.Assignment != null && dto.Score > submission.Assignment.TotalScore)
+                throw new ArgumentException($"Score cannot exceed total score ({submission.Assignment.TotalScore}).");
+
             submission.GivenScore = dto.Score;
             submission.IsGraded = true;
 
@@ -181,7 +215,7 @@ namespace ELearningPlatform.Infrastructure.Services
             var studentNotification = new Notification
             {
                 UserId = submission.StudentId,
-                Message = $"ASSIGNMENT_GRADED||{submission.Assignment.Title}||{dto.Score}||{submission.Assignment.TotalScore}",
+                Message = $"ASSIGNMENT_GRADED||{submission.Assignment.Title}||{dto.Score}||{submission.Assignment.TotalScore}||{submission.AssignmentId}||{submission.Assignment.CourseId}",
                 CreatedAt = DateTime.UtcNow,
                 IsRead = false
             };
@@ -236,7 +270,7 @@ namespace ELearningPlatform.Infrastructure.Services
                 }).ToListAsync();
         }
 
-        public async Task<(IEnumerable<AssignmentDto> Pending, IEnumerable<AssignmentSubmissionDto> Completed)> GetStudentAssignmentsAsync(int studentId)
+        public async Task<(IEnumerable<AssignmentDto> Pending, IEnumerable<AssignmentDto> Missed, IEnumerable<AssignmentSubmissionDto> Completed)> GetStudentAssignmentsAsync(int studentId)
         {
             var enrolledCourseIds = await _context.CourseEnrollments
                 .Where(ce => ce.StudentId == studentId)
@@ -253,9 +287,35 @@ namespace ELearningPlatform.Infrastructure.Services
                 .ToListAsync();
 
             var submittedAssignmentIds = submissions.Select(s => s.AssignmentId).ToHashSet();
+            var unsubmittedAssignments = allAssignments.Where(a => !submittedAssignmentIds.Contains(a.Id)).ToList();
+            var nowLocal = DateTime.Now;
+            var nowUtc = DateTime.UtcNow;
 
-            var pending = allAssignments
-                .Where(a => !submittedAssignmentIds.Contains(a.Id))
+            bool IsDue(DateTime? dueDate)
+            {
+                if (!dueDate.HasValue) return true;
+                var d = dueDate.Value;
+                if (d.Kind == DateTimeKind.Utc)
+                    return d >= nowUtc;
+                return d >= nowLocal;
+            }
+
+            var pending = unsubmittedAssignments
+                .Where(a => IsDue(a.DueDate))
+                .Select(a => new AssignmentDto
+                {
+                    Id = a.Id,
+                    Title = a.Title,
+                    Description = a.Description,
+                    DueDate = a.DueDate,
+                    TotalScore = a.TotalScore,
+                    CourseId = a.CourseId,
+                    CourseTitle = a.Course.Title,
+                    LessonId = a.LessonId
+                }).ToList();
+
+            var missed = unsubmittedAssignments
+                .Where(a => !IsDue(a.DueDate))
                 .Select(a => new AssignmentDto
                 {
                     Id = a.Id,
@@ -274,7 +334,7 @@ namespace ELearningPlatform.Infrastructure.Services
                 completed.Add(await GetSubmissionDtoAsync(sub.Id));
             }
 
-            return (pending, completed);
+            return (pending, missed, completed);
         }
 
         public async Task<IEnumerable<AssignmentSubmissionDto>> GetSubmissionsForGradingAsync(int instructorId, int courseId, int studentId)
@@ -318,14 +378,43 @@ namespace ELearningPlatform.Infrastructure.Services
                 TotalScore = s.Assignment.TotalScore,
                 IsGraded = s.IsGraded,
                 SubmissionDate = s.SubmissionDate,
-                Answers = s.Answers.Select(a => new AssignmentAnswerDto
-                {
-                    Id = a.Id,
-                    AssignmentQuestionId = a.AssignmentQuestionId,
-                    QuestionText = a.Question.QuestionText,
-                    QuestionType = a.Question.Type,
-                    AnswerText = a.AnswerText,
-                    Score = a.Score
+                Answers = s.Answers.Select(a => {
+                    var isMcq = a.Question != null && (a.Question.Type.ToLower() == "mcq" || a.Question.Type.ToLower() == "quiz");
+                    bool? isCorrect = null;
+                    if (isMcq)
+                    {
+                        if (a.Score.HasValue)
+                        {
+                            isCorrect = a.Score.Value > 0;
+                        }
+                        else if (!string.IsNullOrEmpty(a.Question?.CorrectAnswer))
+                        {
+                            var studentAns = (a.AnswerText ?? string.Empty).Trim();
+                            var correctAns = (a.Question.CorrectAnswer ?? string.Empty).Trim();
+                            var match = string.Equals(studentAns, correctAns, StringComparison.OrdinalIgnoreCase);
+                            if (!match && !string.IsNullOrEmpty(a.Question.Options) && int.TryParse(studentAns, out int optIdx))
+                            {
+                                var opts = a.Question.Options.Split(',');
+                                if (optIdx >= 0 && optIdx < opts.Length)
+                                {
+                                    match = string.Equals(opts[optIdx].Trim(), correctAns, StringComparison.OrdinalIgnoreCase);
+                                }
+                            }
+                            isCorrect = match;
+                        }
+                    }
+
+                    return new AssignmentAnswerDto
+                    {
+                        Id = a.Id,
+                        AssignmentQuestionId = a.AssignmentQuestionId,
+                        QuestionText = a.Question?.QuestionText ?? string.Empty,
+                        QuestionType = a.Question?.Type ?? string.Empty,
+                        AnswerText = a.AnswerText,
+                        Score = a.Score,
+                        CorrectAnswer = a.Question?.CorrectAnswer,
+                        IsCorrect = isCorrect
+                    };
                 }).ToList()
             };
         }
