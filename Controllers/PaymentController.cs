@@ -170,6 +170,9 @@ namespace ELearningPlatform.Controllers
                             };
                             _context.CourseEnrollments.Add(enrollment);
 
+                            var student = await _context.Users.FindAsync(studentId);
+                            string sName = student?.Username ?? "طالب";
+
                             decimal instructorShare = totalPaid * 0.80m;
                             var instructor = await _context.Users.FindAsync(course.InstructorId);
                             if (instructor != null)
@@ -177,8 +180,21 @@ namespace ELearningPlatform.Controllers
                                 instructor.WalletBalance += instructorShare;
                             }
 
-                            var student = await _context.Users.FindAsync(studentId);
-                            string sName = student?.Username ?? "طالب";
+                            _context.PaymentTransactions.Add(new ELearningPlatform.Core.Entities.PaymentTransaction
+                            {
+                                StudentId = studentId,
+                                StudentName = sName,
+                                StudentEmail = student?.Email ?? "",
+                                StudentPhone = student?.PhoneNumber,
+                                CourseId = course.Id,
+                                CourseTitle = course.Title,
+                                InstructorId = course.InstructorId,
+                                InstructorName = instructor?.Username ?? "Instructor",
+                                AmountPaid = totalPaid,
+                                PaymentStatus = "PAID",
+                                EnrolledAt = DateTime.UtcNow
+                            });
+
                             decimal platformShare = totalPaid * 0.20m;
 
                             // إرسال إشعار للمعلم بانضمام طالب جديد

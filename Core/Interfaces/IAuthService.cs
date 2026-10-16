@@ -8,7 +8,7 @@ namespace ELearningPlatform.Core.Interfaces
         Task<AuthResponseDto> RegisterAsync(RegisterDto request);
         Task<AuthResponseDto> LoginAsync(LoginDto request);
         Task<AuthResponseDto> VerifyOtpAsync(VerifyOtpDto request);
-        Task<bool> ResetPasswordAsync(ResetPasswordDto request);
+        Task<(bool Success, bool IsAdmin)> ResetPasswordAsync(ResetPasswordDto request);
         string GeneratePasswordResetToken(string email);
     }
 }

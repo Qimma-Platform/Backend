@@ -1,4 +1,4 @@
-﻿using System.Net;
+using System.Net;
 using System.Net.Mail;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
@@ -34,7 +34,7 @@ namespace ELearningPlatform.Infrastructure.Services
 
             var mailMessage = new MailMessage
             {
-                From = new MailAddress(senderEmail, "Fluency First"),
+                From = new MailAddress(senderEmail, "Qimma"),
                 Subject = subject,
                 Body = body,
                 IsBodyHtml = true

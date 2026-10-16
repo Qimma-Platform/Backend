@@ -24,7 +24,7 @@ namespace ELearningPlatform.Controllers
         }
 
         [HttpGet("stats")]
-        public async Task<IActionResult> GetDashboardStats([FromQuery] string timeframe = "7days")
+        public async Task<IActionResult> GetDashboardStats([FromQuery] string timeframe = "7days", [FromQuery] string? date = null)
         {
             var userIdString = User.FindFirstValue(ClaimTypes.NameIdentifier);
             if (!int.TryParse(userIdString, out int instructorId)) return Unauthorized();
@@ -36,14 +36,16 @@ namespace ELearningPlatform.Controllers
             var currentMonthStart = new DateTime(now.Year, now.Month, 1);
             var lastMonthStart = currentMonthStart.AddMonths(-1);
 
-            // 1. Get Course IDs and Ratings for the instructor (lightweight projection)
+            // 1. Get Course IDs, Ratings, and Types for the instructor (lightweight projection)
             var courses = await _context.Courses
                 .AsNoTracking()
                 .Where(c => c.InstructorId == instructorId)
-                .Select(c => new { c.Id, c.Rating })
+                .Select(c => new { c.Id, c.Rating, c.IsFree, c.Price })
                 .ToListAsync();
 
             var courseIds = courses.Select(c => c.Id).ToList();
+            int paidCoursesCount = courses.Count(c => !c.IsFree && c.Price > 0);
+            int freeCoursesCount = courses.Count(c => c.IsFree || c.Price == 0);
 
             double instructorRating = 0;
             var ratedCourses = courses.Where(c => (c.Rating ?? 0m) > 0).ToList();
@@ -112,17 +114,33 @@ namespace ELearningPlatform.Controllers
                 type = "quiz",
                 messageAr = $"أنهى {(q.Student != null ? q.Student.Username : "طالب")} اختبار لدرس {(q.Lesson != null ? q.Lesson.Title : "غير معروف")} بدرجة {q.Score}",
                 messageEn = $"{(q.Student != null ? q.Student.Username : "Student")} completed {(q.Lesson != null ? q.Lesson.Title : "Unknown")} quiz with score {q.Score}",
-                date = q.AttemptDate
+                date = DateTime.SpecifyKind(q.AttemptDate, DateTimeKind.Utc)
             }).ToList();
 
-            // 3. Calculate Real-Time Revenue & Growth
-            decimal totalRevenue = enrollments
-                .Where(e => !e.CourseIsFree)
-                .Sum(e => (e.CoursePrice * (1m - (e.CourseDiscount / 100m))) * 0.8m);
+            // 3. Calculate Real-Time Revenue & Growth (Preserve payments from PaymentTransactions even if course canceled - Req 8)
+            var persistentPayments = await _context.PaymentTransactions
+                .AsNoTracking()
+                .Where(p => p.InstructorId == instructorId)
+                .ToListAsync();
 
-            decimal monthlyRevenue = enrollments
-                .Where(e => !e.CourseIsFree && e.EnrolledAt >= currentMonthStart)
-                .Sum(e => (e.CoursePrice * (1m - (e.CourseDiscount / 100m))) * 0.8m);
+            decimal totalRevenue = 0m;
+            decimal monthlyRevenue = 0m;
+
+            if (persistentPayments.Any())
+            {
+                totalRevenue = persistentPayments.Sum(p => p.AmountPaid * 0.8m);
+                monthlyRevenue = persistentPayments.Where(p => p.EnrolledAt >= currentMonthStart).Sum(p => p.AmountPaid * 0.8m);
+            }
+            else
+            {
+                totalRevenue = enrollments
+                    .Where(e => !e.CourseIsFree)
+                    .Sum(e => (e.CoursePrice * (1m - (e.CourseDiscount / 100m))) * 0.8m);
+
+                monthlyRevenue = enrollments
+                    .Where(e => !e.CourseIsFree && e.EnrolledAt >= currentMonthStart)
+                    .Sum(e => (e.CoursePrice * (1m - (e.CourseDiscount / 100m))) * 0.8m);
+            }
 
             var studentsThisMonth = enrollments.Where(e => e.EnrolledAt >= currentMonthStart).Select(e => e.StudentId).Distinct().Count();
             var studentsLastMonth = enrollments.Where(e => e.EnrolledAt >= lastMonthStart && e.EnrolledAt < currentMonthStart).Select(e => e.StudentId).Distinct().Count();
@@ -137,17 +155,29 @@ namespace ELearningPlatform.Controllers
                 studentGrowth = 100;
             }
 
-            var recentTransactions = enrollments
-                .OrderByDescending(e => e.EnrolledAt)
-                .Take(100)
-                .Select(e => new
-                {
-                    studentName = e.StudentUsername,
-                    courseTitle = e.CourseTitle,
-                    amount = e.CourseIsFree ? 0 : Math.Round((e.CoursePrice * (1m - (e.CourseDiscount / 100m))) * 0.8m, 2),
-                    date = e.EnrolledAt
-                })
-                .ToList();
+            var recentTransactions = persistentPayments.Any()
+                ? persistentPayments
+                    .OrderByDescending(p => p.EnrolledAt)
+                    .Take(100)
+                    .Select(p => (dynamic)new
+                    {
+                        studentName = p.StudentName,
+                        courseTitle = p.CourseTitle,
+                        amount = Math.Round(p.AmountPaid * 0.8m, 2),
+                        date = DateTime.SpecifyKind(p.EnrolledAt, DateTimeKind.Utc)
+                    })
+                    .ToList()
+                : enrollments
+                    .OrderByDescending(e => e.EnrolledAt)
+                    .Take(100)
+                    .Select(e => (dynamic)new
+                    {
+                        studentName = e.StudentUsername,
+                        courseTitle = e.CourseTitle,
+                        amount = e.CourseIsFree ? 0 : Math.Round((e.CoursePrice * (1m - (e.CourseDiscount / 100m))) * 0.8m, 2),
+                        date = DateTime.SpecifyKind(e.EnrolledAt, DateTimeKind.Utc)
+                    })
+                    .ToList();
 
             // 4. Dynamic Real Chart Data Generation (New Enrollments & Course Completions)
             var lessonCountsPerCourse = courseIds.Count == 0 ? new Dictionary<int, int>() : await _context.Lessons
@@ -172,7 +202,35 @@ namespace ELearningPlatform.Controllers
             var newEnrollmentsData = new List<int>();
             var courseCompletionsData = new List<int>();
 
-            if (timeframe == "1year")
+            if (!string.IsNullOrWhiteSpace(date) && DateTime.TryParse(date, out var specificDate))
+            {
+                var sDate = specificDate.Date;
+                for (int hour = 0; hour < 24; hour += 4)
+                {
+                    var slotStart = sDate.AddHours(hour);
+                    var slotEnd = slotStart.AddHours(4);
+                    chartLabels.Add($"{hour:D2}:00 - {hour + 4:D2}:00");
+
+                    int slotEnrollments = enrollments.Count(e => e.EnrolledAt >= slotStart && e.EnrolledAt < slotEnd);
+                    int slotCompletions = completionsDates.Count(d => d >= slotStart && d < slotEnd);
+                    newEnrollmentsData.Add(slotEnrollments);
+                    courseCompletionsData.Add(slotCompletions);
+                }
+            }
+            else if (timeframe == "all")
+            {
+                for (int i = 23; i >= 0; i--)
+                {
+                    var targetMonth = now.AddMonths(-i);
+                    chartLabels.Add(targetMonth.ToString("MMM yyyy"));
+
+                    int monthlyEnrollments = enrollments.Count(e => e.EnrolledAt.Year == targetMonth.Year && e.EnrolledAt.Month == targetMonth.Month);
+                    int monthlyCompletions = completionsDates.Count(d => d.Year == targetMonth.Year && d.Month == targetMonth.Month);
+                    newEnrollmentsData.Add(monthlyEnrollments);
+                    courseCompletionsData.Add(monthlyCompletions);
+                }
+            }
+            else if (timeframe == "1year")
             {
                 for (int i = 11; i >= 0; i--)
                 {
@@ -292,6 +350,8 @@ namespace ELearningPlatform.Controllers
                 totalQuizzes = totalQuizzesCount,
                 totalLessons = totalLessonsCount,
                 activeCourses = courses.Count,
+                paidCoursesCount = paidCoursesCount,
+                freeCoursesCount = freeCoursesCount,
                 totalRevenue = totalRevenue,
                 monthlyRevenue = monthlyRevenue,
                 studentGrowth = studentGrowth,

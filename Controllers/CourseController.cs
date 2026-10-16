@@ -101,6 +101,7 @@ namespace ELearningPlatform.Controllers
         }
 
         [HttpGet]
+        [AllowAnonymous]
         public async Task<IActionResult> GetAllCourses()
         {
             var courses = await _courseService.GetAllCoursesAsync();
@@ -142,6 +143,25 @@ namespace ELearningPlatform.Controllers
                         Message = $"ENROLLMENT||اشتراك جديد ({enrollTypeAr}): قام الطالب '{studentDisplay}' بالاشتراك في كورس '{course.Title}'||New Enrollment ({enrollTypeEn}): Student '{studentDisplay}' enrolled in course '{course.Title}'",
                         CreatedAt = DateTime.UtcNow,
                         IsRead = false
+                    });
+                }
+
+                if (!isFree && course.Price > 0)
+                {
+                    var inst = await _context.Users.FindAsync(course.InstructorId);
+                    _context.PaymentTransactions.Add(new ELearningPlatform.Core.Entities.PaymentTransaction
+                    {
+                        StudentId = studentId,
+                        StudentName = studentDisplay,
+                        StudentEmail = student?.Email ?? "",
+                        StudentPhone = student?.PhoneNumber,
+                        CourseId = course.Id,
+                        CourseTitle = course.Title,
+                        InstructorId = course.InstructorId,
+                        InstructorName = inst?.Username ?? "Instructor",
+                        AmountPaid = course.Price,
+                        PaymentStatus = "PAID",
+                        EnrolledAt = DateTime.UtcNow
                     });
                 }
 

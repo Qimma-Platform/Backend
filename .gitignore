@@ -1,2 +1,29 @@
+## Build and Output Folders
+bin/
+obj/
+out/
+
+## Visual Studio & IDE files
+.vs/
+*.user
+*.userosscache
+*.suo
+*.userprefs
+*.sln.docstates
+.vscode/
+
+## Sensitive Configuration Files (NEVER COMMIT REAL CREDENTIALS)
 appsettings.json
-appsettings.Development.json
+appsettings.*.json
+!appsettings.Example.json
+secrets.json
+
+## Uploaded User Media (Keep repo lightweight)
+wwwroot/videos/*
+!wwwroot/videos/.gitkeep
+wwwroot/uploads/*
+!wwwroot/uploads/.gitkeep
+
+## OS generated files
+.DS_Store
+Thumbs.db

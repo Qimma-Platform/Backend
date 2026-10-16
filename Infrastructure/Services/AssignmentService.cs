@@ -44,6 +44,7 @@ namespace ELearningPlatform.Infrastructure.Services
                     QuestionText = q.QuestionText,
                     Type = q.Type,
                     Options = q.Options,
+                    CorrectAnswer = q.CorrectAnswer,
                     Score = q.Score
                 }).ToList()
             };
@@ -114,6 +115,7 @@ namespace ELearningPlatform.Infrastructure.Services
                     QuestionText = q.QuestionText,
                     Type = q.Type,
                     Options = q.Options,
+                    CorrectAnswer = q.CorrectAnswer,
                     Score = q.Score
                 }).ToList()
             };
@@ -151,13 +153,17 @@ namespace ELearningPlatform.Infrastructure.Services
                         var studentAns = (a.AnswerText ?? string.Empty).Trim();
                         var correctAns = (question.CorrectAnswer ?? string.Empty).Trim();
 
-                        bool isMatch = string.Equals(studentAns, correctAns, StringComparison.OrdinalIgnoreCase);
-                        if (!isMatch && !string.IsNullOrEmpty(question.Options) && int.TryParse(studentAns, out int optIdx))
+                        bool isMatch = false;
+                        if (!string.IsNullOrWhiteSpace(correctAns))
                         {
-                            var opts = question.Options.Split(',');
-                            if (optIdx >= 0 && optIdx < opts.Length)
+                            isMatch = string.Equals(studentAns, correctAns, StringComparison.OrdinalIgnoreCase);
+                            if (!isMatch && !string.IsNullOrEmpty(question.Options))
                             {
-                                isMatch = string.Equals(opts[optIdx].Trim(), correctAns, StringComparison.OrdinalIgnoreCase);
+                                var opts = question.Options.Split(',').Select(o => o.Trim()).ToArray();
+                                if (int.TryParse(studentAns, out int sIdx) && sIdx >= 0 && sIdx < opts.Length)
+                                {
+                                    isMatch = string.Equals(opts[sIdx], correctAns, StringComparison.OrdinalIgnoreCase);
+                                }
                             }
                         }
 
@@ -265,6 +271,7 @@ namespace ELearningPlatform.Infrastructure.Services
                         QuestionText = q.QuestionText,
                         Type = q.Type,
                         Options = q.Options,
+                        CorrectAnswer = q.CorrectAnswer,
                         Score = q.Score
                     }).ToList()
                 }).ToListAsync();
@@ -383,21 +390,22 @@ namespace ELearningPlatform.Infrastructure.Services
                     bool? isCorrect = null;
                     if (isMcq)
                     {
-                        if (a.Score.HasValue)
+                        var studentAns = (a.AnswerText ?? string.Empty).Trim();
+                        var correctAns = (a.Question?.CorrectAnswer ?? string.Empty).Trim();
+
+                        if (string.IsNullOrWhiteSpace(correctAns))
                         {
-                            isCorrect = a.Score.Value > 0;
+                            isCorrect = false;
                         }
-                        else if (!string.IsNullOrEmpty(a.Question?.CorrectAnswer))
+                        else
                         {
-                            var studentAns = (a.AnswerText ?? string.Empty).Trim();
-                            var correctAns = (a.Question.CorrectAnswer ?? string.Empty).Trim();
-                            var match = string.Equals(studentAns, correctAns, StringComparison.OrdinalIgnoreCase);
-                            if (!match && !string.IsNullOrEmpty(a.Question.Options) && int.TryParse(studentAns, out int optIdx))
+                            bool match = string.Equals(studentAns, correctAns, StringComparison.OrdinalIgnoreCase);
+                            if (!match && !string.IsNullOrEmpty(a.Question?.Options))
                             {
-                                var opts = a.Question.Options.Split(',');
-                                if (optIdx >= 0 && optIdx < opts.Length)
+                                var opts = a.Question.Options.Split(',').Select(o => o.Trim()).ToArray();
+                                if (int.TryParse(studentAns, out int sIdx) && sIdx >= 0 && sIdx < opts.Length)
                                 {
-                                    match = string.Equals(opts[optIdx].Trim(), correctAns, StringComparison.OrdinalIgnoreCase);
+                                    match = string.Equals(opts[sIdx], correctAns, StringComparison.OrdinalIgnoreCase);
                                 }
                             }
                             isCorrect = match;
@@ -417,6 +425,87 @@ namespace ELearningPlatform.Infrastructure.Services
                     };
                 }).ToList()
             };
+        }
+
+        public async Task<bool> DeleteAssignmentAsync(int instructorId, int assignmentId, bool isAdmin)
+        {
+            var assignment = await _context.Assignments
+                .Include(a => a.Questions)
+                .Include(a => a.Submissions)
+                    .ThenInclude(s => s.Answers)
+                .FirstOrDefaultAsync(a => a.Id == assignmentId);
+
+            if (assignment == null) return false;
+
+            if (!isAdmin)
+            {
+                var course = await _context.Courses.FirstOrDefaultAsync(c => c.Id == assignment.CourseId);
+                if (course == null || course.InstructorId != instructorId)
+                    throw new UnauthorizedAccessException("You are not authorized to delete this assignment.");
+            }
+
+            foreach (var sub in assignment.Submissions)
+            {
+                if (sub.Answers.Any())
+                {
+                    _context.AssignmentAnswers.RemoveRange(sub.Answers);
+                }
+            }
+            if (assignment.Submissions.Any())
+            {
+                _context.AssignmentSubmissions.RemoveRange(assignment.Submissions);
+            }
+            if (assignment.Questions.Any())
+            {
+                _context.AssignmentQuestions.RemoveRange(assignment.Questions);
+            }
+
+            _context.Assignments.Remove(assignment);
+            await _context.SaveChangesAsync();
+            return true;
+        }
+
+        public async Task<bool> DeleteAssignmentByLessonAsync(int instructorId, int lessonId, bool isAdmin)
+        {
+            var assignments = await _context.Assignments
+                .Include(a => a.Questions)
+                .Include(a => a.Submissions)
+                    .ThenInclude(s => s.Answers)
+                .Where(a => a.LessonId == lessonId)
+                .ToListAsync();
+
+            if (!assignments.Any()) return true;
+
+            foreach (var assignment in assignments)
+            {
+                if (!isAdmin)
+                {
+                    var course = await _context.Courses.FirstOrDefaultAsync(c => c.Id == assignment.CourseId);
+                    if (course == null || course.InstructorId != instructorId)
+                        throw new UnauthorizedAccessException("You are not authorized to delete this assignment.");
+                }
+
+                foreach (var sub in assignment.Submissions)
+                {
+                    if (sub.Answers.Any())
+                    {
+                        _context.AssignmentAnswers.RemoveRange(sub.Answers);
+                    }
+                }
+                if (assignment.Submissions.Any())
+                {
+                    _context.AssignmentSubmissions.RemoveRange(assignment.Submissions);
+                }
+                if (assignment.Questions.Any())
+                {
+                    _context.AssignmentQuestions.RemoveRange(assignment.Questions);
+                }
+
+                _context.Assignments.Remove(assignment);
+            }
+
+            await _context.SaveChangesAsync();
+            return true;
         }
     }
 }

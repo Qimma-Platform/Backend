@@ -72,18 +72,28 @@ namespace ELearningPlatform.Controllers
             try
             {
                 string resetToken = _authService.GeneratePasswordResetToken(model.Email);
-                string resetLink = $"http://localhost:4200/reset-password?token={resetToken}";
+                bool isAdmin = model.Email.Equals("admin@fluencyfirst.com", StringComparison.OrdinalIgnoreCase);
+                try
+                {
+                    var handler = new System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler();
+                    var jwt = handler.ReadJwtToken(resetToken);
+                    var roleClaim = System.Linq.Enumerable.FirstOrDefault(jwt.Claims, c => c.Type == System.Security.Claims.ClaimTypes.Role || c.Type == "role")?.Value;
+                    if (roleClaim == "Admin" || roleClaim == "2") isAdmin = true;
+                }
+                catch { }
+
+                string resetLink = $"http://localhost:4200/reset-password?token={resetToken}&email={Uri.EscapeDataString(model.Email)}{(isAdmin ? "&isAdmin=true" : "")}";
 
                 string emailBody = $@"
                     <div style='font-family: Arial, sans-serif; padding: 20px; color: #333; text-align: center;'>
-                        <h2 style='color: #4F46E5;'>Fluency First - Password Reset</h2>
+                        <h2 style='color: #4F46E5;'>Qimma - Password Reset</h2>
                         <p>You recently requested to reset your password for your account.</p>
                         <p>Click the button below to set a new password:</p>
                         <a href='{resetLink}' style='background: #4F46E5; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; display: inline-block; margin-top: 15px; font-weight: bold;'>Reset Password</a>
                         <p style='color: #777; font-size: 12px; margin-top: 20px;'>If you did not request a password reset, please ignore this email.</p>
                     </div>";
 
-                await _emailService.SendEmailAsync(model.Email, "Fluency First - Password Reset", emailBody);
+                await _emailService.SendEmailAsync(model.Email, "Qimma - Password Reset", emailBody);
 
                 return Ok(new { message = "Reset link sent successfully." });
             }
@@ -98,10 +108,10 @@ namespace ELearningPlatform.Controllers
         {
             try
             {
-                var result = await _authService.ResetPasswordAsync(request);
-                if (!result) return BadRequest(new { message = "Email not found." });
+                var (success, isAdmin) = await _authService.ResetPasswordAsync(request);
+                if (!success) return BadRequest(new { message = "Email not found." });
 
-                return Ok(new { message = "Password reset successfully." });
+                return Ok(new { message = "Password reset successfully.", isAdmin });
             }
             catch (Exception ex)
             {

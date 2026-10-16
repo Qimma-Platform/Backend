@@ -113,5 +113,43 @@ namespace ELearningPlatform.Controllers
             var result = await _assignmentService.GetSubmissionsForGradingAsync(GetUserId(), courseId, studentId);
             return Ok(result);
         }
+
+        [HttpDelete("{id}")]
+        public async Task<IActionResult> DeleteAssignment(int id)
+        {
+            try
+            {
+                var success = await _assignmentService.DeleteAssignmentAsync(GetUserId(), id, User.IsInRole("Admin"));
+                if (!success) return NotFound(new { message = "Assignment not found." });
+                return Ok(new { message = "Assignment deleted successfully." });
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return Forbid();
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        [HttpDelete("lesson/{lessonId}")]
+        public async Task<IActionResult> DeleteAssignmentByLesson(int lessonId)
+        {
+            try
+            {
+                var success = await _assignmentService.DeleteAssignmentByLessonAsync(GetUserId(), lessonId, User.IsInRole("Admin"));
+                if (!success) return NotFound(new { message = "No assignments found for this lesson." });
+                return Ok(new { message = "Assignment deleted successfully." });
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return Forbid();
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
     }
 }

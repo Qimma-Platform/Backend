@@ -14,5 +14,7 @@ namespace ELearningPlatform.Core.Interfaces
         Task<IEnumerable<AssignmentDto>> GetAssignmentsByLessonAsync(int lessonId);
         Task<(IEnumerable<AssignmentDto> Pending, IEnumerable<AssignmentDto> Missed, IEnumerable<AssignmentSubmissionDto> Completed)> GetStudentAssignmentsAsync(int studentId);
         Task<IEnumerable<AssignmentSubmissionDto>> GetSubmissionsForGradingAsync(int instructorId, int courseId, int studentId);
+        Task<bool> DeleteAssignmentAsync(int instructorId, int assignmentId, bool isAdmin);
+        Task<bool> DeleteAssignmentByLessonAsync(int instructorId, int lessonId, bool isAdmin);
     }
 }

@@ -22,6 +22,10 @@ namespace ELearningPlatform.Infrastructure.Services
         public async Task<CourseResponseDto> CreateCourseAsync(CreateCourseDto request, int instructorId)
         {
             var savedCoverUrl = SaveBase64Image(request.CoverImageUrl);
+            if (string.IsNullOrWhiteSpace(savedCoverUrl))
+            {
+                savedCoverUrl = "/assets/images/default-cover.jpg";
+            }
 
             var course = new Course
             {
@@ -31,7 +35,9 @@ namespace ELearningPlatform.Infrastructure.Services
                 InstructorId = instructorId,
                 IsFree = request.IsFree,
                 Price = request.Price,
-                DiscountPercentage = request.DiscountPercentage
+                DiscountPercentage = request.DiscountPercentage,
+                Rating = 0m,
+                TotalRatingsCount = 0
             };
 
             _context.Courses.Add(course);
@@ -44,12 +50,12 @@ namespace ELearningPlatform.Infrastructure.Services
                 Id = course.Id,
                 Title = course.Title,
                 Description = course.Description,
-                CoverImageUrl = course.CoverImageUrl,
+                CoverImageUrl = string.IsNullOrWhiteSpace(course.CoverImageUrl) ? "/assets/images/default-cover.jpg" : course.CoverImageUrl,
                 InstructorName = instructor?.Username ?? string.Empty,
                 IsFree = course.IsFree,
                 Price = course.Price,
                 DiscountPercentage = course.DiscountPercentage,
-                Rating = (double)(course.Rating ?? 0m),
+                Rating = course.TotalRatingsCount > 0 ? (double)(course.Rating ?? 0m) : 0.0,
                 TotalLessonsCount = 0,
                 TotalStudentsCount = 0
             };
@@ -64,12 +70,12 @@ namespace ELearningPlatform.Infrastructure.Services
                     Id = c.Id,
                     Title = c.Title,
                     Description = c.Description,
-                    CoverImageUrl = c.CoverImageUrl,
+                    CoverImageUrl = string.IsNullOrWhiteSpace(c.CoverImageUrl) ? "/assets/images/default-cover.jpg" : c.CoverImageUrl,
                     InstructorName = c.Instructor != null ? c.Instructor.Username : string.Empty,
                     IsFree = c.IsFree,
                     Price = c.Price,
                     DiscountPercentage = c.DiscountPercentage,
-                    Rating = (double)(c.Rating ?? 0m),
+                    Rating = c.TotalRatingsCount > 0 ? (double)(c.Rating ?? 0m) : 0.0,
                     TotalLessonsCount = _context.Lessons.Count(l => l.CourseId == c.Id),
                     TotalStudentsCount = _context.CourseEnrollments.Count(e => e.CourseId == c.Id)
                 }).ToListAsync();
@@ -104,12 +110,12 @@ namespace ELearningPlatform.Infrastructure.Services
                     Id = ce.Course!.Id,
                     Title = ce.Course.Title,
                     Description = ce.Course.Description,
-                    CoverImageUrl = ce.Course.CoverImageUrl,
+                    CoverImageUrl = string.IsNullOrWhiteSpace(ce.Course.CoverImageUrl) ? "/assets/images/default-cover.jpg" : ce.Course.CoverImageUrl,
                     InstructorName = ce.Course.Instructor != null ? ce.Course.Instructor.Username : string.Empty,
                     IsFree = ce.Course.IsFree,
                     Price = ce.Course.Price,
                     DiscountPercentage = ce.Course.DiscountPercentage,
-                    Rating = (double)(ce.Course.Rating ?? 0m),
+                    Rating = ce.Course.TotalRatingsCount > 0 ? (double)(ce.Course.Rating ?? 0m) : 0.0,
                     TotalLessonsCount = _context.Lessons.Count(l => l.CourseId == ce.CourseId),
                     TotalStudentsCount = _context.CourseEnrollments.Count(e => e.CourseId == ce.CourseId)
                 }).ToListAsync();
@@ -125,12 +131,12 @@ namespace ELearningPlatform.Infrastructure.Services
                     Id = c.Id,
                     Title = c.Title,
                     Description = c.Description,
-                    CoverImageUrl = c.CoverImageUrl,
+                    CoverImageUrl = string.IsNullOrWhiteSpace(c.CoverImageUrl) ? "/assets/images/default-cover.jpg" : c.CoverImageUrl,
                     InstructorName = c.Instructor != null ? c.Instructor.Username : string.Empty,
                     IsFree = c.IsFree,
                     Price = c.Price,
                     DiscountPercentage = c.DiscountPercentage,
-                    Rating = (double)(c.Rating ?? 0m),
+                    Rating = c.TotalRatingsCount > 0 ? (double)(c.Rating ?? 0m) : 0.0,
                     TotalLessonsCount = _context.Lessons.Count(l => l.CourseId == c.Id),
                     TotalStudentsCount = _context.CourseEnrollments.Count(e => e.CourseId == c.Id)
                 }).ToListAsync();
@@ -149,7 +155,8 @@ namespace ELearningPlatform.Infrastructure.Services
 
             if (request.CoverImageUrl != null)
             {
-                course.CoverImageUrl = SaveBase64Image(request.CoverImageUrl);
+                var uploaded = SaveBase64Image(request.CoverImageUrl);
+                course.CoverImageUrl = string.IsNullOrWhiteSpace(uploaded) ? "/assets/images/default-cover.jpg" : uploaded;
             }
 
             if (request.IsFree.HasValue)
@@ -170,12 +177,12 @@ namespace ELearningPlatform.Infrastructure.Services
                 Id = course.Id,
                 Title = course.Title,
                 Description = course.Description,
-                CoverImageUrl = course.CoverImageUrl,
+                CoverImageUrl = string.IsNullOrWhiteSpace(course.CoverImageUrl) ? "/assets/images/default-cover.jpg" : course.CoverImageUrl,
                 InstructorName = instructor?.Username ?? string.Empty,
                 IsFree = course.IsFree,
                 Price = course.Price,
                 DiscountPercentage = course.DiscountPercentage,
-                Rating = (double)(course.Rating ?? 0m),
+                Rating = course.TotalRatingsCount > 0 ? (double)(course.Rating ?? 0m) : 0.0,
                 TotalLessonsCount = _context.Lessons.Count(l => l.CourseId == course.Id),
                 TotalStudentsCount = _context.CourseEnrollments.Count(e => e.CourseId == course.Id)
             };

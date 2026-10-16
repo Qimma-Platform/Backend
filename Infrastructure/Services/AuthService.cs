@@ -84,13 +84,13 @@ namespace ELearningPlatform.Infrastructure.Services
             // 3. Send OTP Email
             string emailBody = $@"
                 <div style='font-family: Arial, sans-serif; padding: 20px; color: #333; text-align: center;'>
-                    <h2 style='color: #4F46E5;'>Welcome to Fluency First!</h2>
+                    <h2 style='color: #4F46E5;'>Welcome to Qimma!</h2>
                     <p>Your email confirmation code is:</p>
                     <h1 style='letter-spacing: 5px; color: #130E35; background: #F4F7FE; padding: 15px; border-radius: 10px; display: inline-block;'>{otp}</h1>
                     <p style='color: #777; font-size: 12px;'>This code expires in 15 minutes.</p>
                 </div>";
 
-            await _emailService.SendEmailAsync(request.Email, "Fluency First - Confirm your email", emailBody);
+            await _emailService.SendEmailAsync(request.Email, "Qimma - Confirm your email", emailBody);
 
             return new AuthResponseDto
             {
@@ -131,6 +131,16 @@ namespace ELearningPlatform.Infrastructure.Services
             if (user == null || !BCrypt.Net.BCrypt.Verify(request.Password, user.PasswordHash))
                 throw new UnauthorizedAccessException("Invalid credentials.");
 
+            if (request.IsAdminPortal == true && user.Role != UserRole.Admin)
+            {
+                throw new UnauthorizedAccessException("PORTAL_ADMIN_ONLY");
+            }
+
+            if (request.IsAdminPortal != true && user.Role == UserRole.Admin)
+            {
+                throw new UnauthorizedAccessException("PORTAL_PUBLIC_ONLY");
+            }
+
             if (!user.IsEmailConfirmed)
             {
                 user.OtpCode = new Random().Next(100000, 999999).ToString();
@@ -138,8 +148,8 @@ namespace ELearningPlatform.Infrastructure.Services
                 _unitOfWork.Users.Update(user);
                 await _unitOfWork.CompleteAsync();
 
-                string emailBody = $"<h2>Fluency First</h2><p>Your new OTP is: <b>{user.OtpCode}</b></p>";
-                await _emailService.SendEmailAsync(user.Email, "Fluency First - Verify your email", emailBody);
+                string emailBody = $"<h2>Qimma</h2><p>Your new OTP is: <b>{user.OtpCode}</b></p>";
+                await _emailService.SendEmailAsync(user.Email, "Qimma - Verify your email", emailBody);
 
                 throw new UnauthorizedAccessException("EMAIL_NOT_CONFIRMED");
             }
@@ -152,7 +162,7 @@ namespace ELearningPlatform.Infrastructure.Services
             };
         }
 
-        public async Task<bool> ResetPasswordAsync(ResetPasswordDto request)
+        public async Task<(bool Success, bool IsAdmin)> ResetPasswordAsync(ResetPasswordDto request)
         {
             string email = request.Email;
 
@@ -183,24 +193,25 @@ namespace ELearningPlatform.Infrastructure.Services
                 }
                 catch
                 {
-                    return false;
+                    return (false, false);
                 }
             }
 
-            if (string.IsNullOrEmpty(email)) return false;
+            if (string.IsNullOrEmpty(email)) return (false, false);
 
             var users = await _unitOfWork.Users.GetAllAsync();
             var user = users.FirstOrDefault(u => u.Email.Equals(email, StringComparison.OrdinalIgnoreCase));
 
             if (user == null)
-                return false;
+                return (false, false);
 
             user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.NewPassword);
 
             _unitOfWork.Users.Update(user);
             await _unitOfWork.CompleteAsync();
 
-            return true;
+            bool isAdmin = user.Role == UserRole.Admin || user.Role.ToString().Equals("Admin", StringComparison.OrdinalIgnoreCase);
+            return (true, isAdmin);
         }
 
         public string GeneratePasswordResetToken(string email)
@@ -211,11 +222,19 @@ namespace ELearningPlatform.Infrastructure.Services
             var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(keyString));
             var credentials = new SigningCredentials(securityKey, SecurityAlgorithms.HmacSha256);
 
-            var claims = new[]
+            var claims = new List<Claim>
             {
                 new Claim(ClaimTypes.Email, email),
                 new Claim("purpose", "password_reset")
             };
+
+            var users = _unitOfWork.Users.GetAllAsync().GetAwaiter().GetResult();
+            var user = users.FirstOrDefault(u => u.Email.Equals(email, StringComparison.OrdinalIgnoreCase));
+            if (user != null)
+            {
+                claims.Add(new Claim(ClaimTypes.Role, user.Role.ToString()));
+                claims.Add(new Claim("role", ((int)user.Role).ToString()));
+            }
 
             var expiration = DateTime.UtcNow.AddHours(2);
 

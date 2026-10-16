@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ELearningPlatform.Core.Entities;
@@ -71,6 +71,27 @@ namespace ELearningPlatform.Controllers
             notification.IsRead = true;
             await _context.SaveChangesAsync();
             return Ok(new { message = "Marked as read" });
+        }
+
+        [HttpPost("read-all")]
+        [HttpPut("read-all")]
+        public async Task<IActionResult> MarkAllAsRead()
+        {
+            var userIdString = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("id") ?? User.FindFirstValue(ClaimTypes.Sid) ?? User.FindFirstValue("sub");
+            if (string.IsNullOrEmpty(userIdString) || !int.TryParse(userIdString, out int userId))
+                return Unauthorized(new { message = "Invalid token: User ID not found" });
+
+            var unread = await _context.Notifications
+                .Where(n => n.UserId == userId && !n.IsRead)
+                .ToListAsync();
+
+            foreach (var n in unread)
+            {
+                n.IsRead = true;
+            }
+            await _context.SaveChangesAsync();
+
+            return Ok(new { message = "All notifications marked as read." });
         }
 
         [HttpDelete("{id}")]

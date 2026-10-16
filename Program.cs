@@ -87,7 +87,7 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("AngularApp", policy =>
     {
-        policy.WithOrigins("http://localhost:4200", "https://brynlee-subpeltated-radia.ngrok-free.dev")
+        policy.SetIsOriginAllowed(origin => true)
               .AllowAnyHeader()
               .AllowAnyMethod()
               .AllowCredentials();
@@ -199,7 +199,19 @@ app.UseCors("AngularApp");
 app.UseAuthentication();
 app.UseAuthorization();
 
-app.UseStaticFiles();
+var contentTypeProvider = new Microsoft.AspNetCore.StaticFiles.FileExtensionContentTypeProvider();
+contentTypeProvider.Mappings[".mkv"] = "video/mp4";
+contentTypeProvider.Mappings[".webm"] = "video/webm";
+contentTypeProvider.Mappings[".mp4"] = "video/mp4";
+contentTypeProvider.Mappings[".mov"] = "video/quicktime";
+contentTypeProvider.Mappings[".avi"] = "video/x-msvideo";
+contentTypeProvider.Mappings[".ogg"] = "video/ogg";
+contentTypeProvider.Mappings[".ogv"] = "video/ogg";
+
+app.UseStaticFiles(new StaticFileOptions
+{
+    ContentTypeProvider = contentTypeProvider
+});
 
 app.MapHub<NotificationHub>("/hubs/notifications");
 app.MapHub<ELearningPlatform.Hubs.LiveSessionHub>("/liveHub");

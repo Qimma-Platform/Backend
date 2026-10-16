@@ -153,6 +153,7 @@ namespace ELearningPlatform.Core.DTOs
         public string Username { get; set; } = string.Empty;
         public string Email { get; set; } = string.Empty;
         public string? PhoneNumber { get; set; }
+        public string? ProfileImage { get; set; }
         public string RoleName { get; set; } = "Admin";
     }
 
@@ -160,6 +161,7 @@ namespace ELearningPlatform.Core.DTOs
     {
         public string Username { get; set; } = string.Empty;
         public string? PhoneNumber { get; set; }
+        public string? ProfileImage { get; set; }
         public string? CurrentPassword { get; set; }
         public string? NewPassword { get; set; }
     }

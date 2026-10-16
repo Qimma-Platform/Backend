@@ -27,6 +27,7 @@ namespace ELearningPlatform.Infrastructure.Data
         public DbSet<AssignmentSubmission> AssignmentSubmissions { get; set; }
         public DbSet<AssignmentAnswer> AssignmentAnswers { get; set; }
         public DbSet<AuditLog> AuditLogs { get; set; }
+        public DbSet<PaymentTransaction> PaymentTransactions { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {

@@ -50,14 +50,17 @@ namespace ELearningPlatform.Controllers
         public async Task<IActionResult> UploadVideo(IFormFile file)
         {
             var role = User.FindFirstValue(ClaimTypes.Role) ?? User.FindFirstValue("role");
-            if (role != "Teacher" && role != "1") return Forbid();
+            if (role != "Teacher" && role != "1" && role != "Admin" && role != "2") return Forbid();
 
             if (file == null || file.Length == 0) return BadRequest("No file uploaded.");
 
             var uploadsFolder = Path.Combine(_env.WebRootPath ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot"), "videos");
             if (!Directory.Exists(uploadsFolder)) Directory.CreateDirectory(uploadsFolder);
 
-            var uniqueFileName = Guid.NewGuid().ToString() + "_" + Path.GetFileName(file.FileName);
+            var rawFileName = Path.GetFileName(file.FileName);
+            var cleanFileName = System.Text.RegularExpressions.Regex.Replace(rawFileName, @"\s+", "_");
+            cleanFileName = System.Text.RegularExpressions.Regex.Replace(cleanFileName, @"[^a-zA-Z0-9_\.-]", "");
+            var uniqueFileName = Guid.NewGuid().ToString("N") + "_" + cleanFileName;
             var filePath = Path.Combine(uploadsFolder, uniqueFileName);
 
             using (var fileStream = new FileStream(filePath, FileMode.Create))
@@ -72,7 +75,7 @@ namespace ELearningPlatform.Controllers
         public async Task<IActionResult> AddLesson(int courseId, [FromBody] Lesson lessonDto)
         {
             var role = User.FindFirstValue(ClaimTypes.Role) ?? User.FindFirstValue("role");
-            if (role != "Teacher" && role != "1") return Forbid();
+            if (role != "Teacher" && role != "1" && role != "Admin" && role != "2") return Forbid();
 
             var course = await _context.Courses.FindAsync(courseId);
             if (course == null) return NotFound("Course not found");
@@ -126,7 +129,7 @@ namespace ELearningPlatform.Controllers
         public async Task<IActionResult> UpdateLesson(int courseId, int lessonId, [FromBody] Lesson lessonDto)
         {
             var role = User.FindFirstValue(ClaimTypes.Role) ?? User.FindFirstValue("role");
-            if (role != "Teacher" && role != "1") return Forbid();
+            if (role != "Teacher" && role != "1" && role != "Admin" && role != "2") return Forbid();
 
             var lesson = await _context.Lessons.FirstOrDefaultAsync(l => l.Id == lessonId && l.CourseId == courseId);
             if (lesson == null) return NotFound("Lesson not found");
@@ -143,10 +146,61 @@ namespace ELearningPlatform.Controllers
         public async Task<IActionResult> DeleteLesson(int courseId, int lessonId)
         {
             var role = User.FindFirstValue(ClaimTypes.Role) ?? User.FindFirstValue("role");
-            if (role != "Teacher" && role != "1") return Forbid();
+            if (role != "Teacher" && role != "1" && role != "Admin" && role != "2") return Forbid();
 
             var lesson = await _context.Lessons.FirstOrDefaultAsync(l => l.Id == lessonId && l.CourseId == courseId);
             if (lesson == null) return NotFound("Lesson not found");
+
+            // 1. Remove quiz attempts linked to this lesson
+            var quizAttempts = await _context.QuizAttempts.Where(qa => qa.LessonId == lessonId).ToListAsync();
+            if (quizAttempts.Any())
+            {
+                _context.QuizAttempts.RemoveRange(quizAttempts);
+            }
+
+            // 2. Remove assignments, questions, submissions, answers linked to this lesson
+            var assignments = await _context.Assignments
+                .Include(a => a.Submissions)
+                    .ThenInclude(s => s.Answers)
+                .Include(a => a.Questions)
+                .Where(a => a.LessonId == lessonId)
+                .ToListAsync();
+
+            foreach (var a in assignments)
+            {
+                foreach (var s in a.Submissions)
+                {
+                    if (s.Answers != null && s.Answers.Any())
+                    {
+                        _context.AssignmentAnswers.RemoveRange(s.Answers);
+                    }
+                }
+                if (a.Submissions != null && a.Submissions.Any())
+                {
+                    _context.AssignmentSubmissions.RemoveRange(a.Submissions);
+                }
+                if (a.Questions != null && a.Questions.Any())
+                {
+                    _context.AssignmentQuestions.RemoveRange(a.Questions);
+                }
+                _context.Assignments.Remove(a);
+            }
+
+            // 3. Remove local video file from disk if applicable
+            if (!string.IsNullOrEmpty(lesson.VideoUrl) && lesson.VideoUrl.StartsWith("/videos/"))
+            {
+                try
+                {
+                    var webRoot = _env.WebRootPath ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot");
+                    var relativePath = lesson.VideoUrl.TrimStart('/').Replace('/', Path.DirectorySeparatorChar);
+                    var filePath = Path.Combine(webRoot, relativePath);
+                    if (System.IO.File.Exists(filePath))
+                    {
+                        System.IO.File.Delete(filePath);
+                    }
+                }
+                catch { }
+            }
 
             _context.Lessons.Remove(lesson);
             await _context.SaveChangesAsync();
@@ -158,10 +212,35 @@ namespace ELearningPlatform.Controllers
         public async Task<IActionResult> DeleteCourse(int id)
         {
             var role = User.FindFirstValue(ClaimTypes.Role) ?? User.FindFirstValue("role");
-            if (role != "Teacher" && role != "1") return Forbid();
+            if (role != "Teacher" && role != "1" && role != "Admin" && role != "2") return Forbid();
 
             var course = await _context.Courses.FindAsync(id);
             if (course == null) return NotFound();
+
+            var lessons = await _context.Lessons.Where(l => l.CourseId == id).ToListAsync();
+            foreach (var l in lessons)
+            {
+                var quizAttempts = await _context.QuizAttempts.Where(qa => qa.LessonId == l.Id).ToListAsync();
+                if (quizAttempts.Any()) _context.QuizAttempts.RemoveRange(quizAttempts);
+
+                var assignments = await _context.Assignments
+                    .Include(a => a.Submissions).ThenInclude(s => s.Answers)
+                    .Include(a => a.Questions)
+                    .Where(a => a.LessonId == l.Id)
+                    .ToListAsync();
+
+                foreach (var a in assignments)
+                {
+                    foreach (var s in a.Submissions)
+                    {
+                        if (s.Answers != null && s.Answers.Any()) _context.AssignmentAnswers.RemoveRange(s.Answers);
+                    }
+                    if (a.Submissions != null && a.Submissions.Any()) _context.AssignmentSubmissions.RemoveRange(a.Submissions);
+                    if (a.Questions != null && a.Questions.Any()) _context.AssignmentQuestions.RemoveRange(a.Questions);
+                    _context.Assignments.Remove(a);
+                }
+            }
+            _context.Lessons.RemoveRange(lessons);
 
             _context.Courses.Remove(course);
             await _context.SaveChangesAsync();

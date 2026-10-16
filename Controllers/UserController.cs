@@ -36,6 +36,7 @@ namespace ELearningPlatform.Controllers
                 user.PhoneNumber,
                 user.Bio,
                 user.ProfileImage,
+                CoverImage = string.IsNullOrWhiteSpace(user.CoverImage) ? "/assets/images/default-cover.jpg" : user.CoverImage,
                 user.TotalXP,
                 user.Role,
                 user.Specialization
@@ -56,6 +57,11 @@ namespace ELearningPlatform.Controllers
             user.PhoneNumber = model.PhoneNumber;
             user.Bio = model.Bio;
             user.Specialization = model.Specialization;
+
+            if (!string.IsNullOrWhiteSpace(model.NewPassword))
+            {
+                user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(model.NewPassword.Trim());
+            }
 
             await _context.SaveChangesAsync();
             return Ok(new { message = "Profile updated" });
@@ -129,7 +135,7 @@ namespace ELearningPlatform.Controllers
                     u.Id,
                     u.Username,
                     u.ProfileImage,
-                    u.CoverImage,
+                    CoverImage = string.IsNullOrWhiteSpace(u.CoverImage) ? "/assets/images/default-cover.jpg" : u.CoverImage,
                     u.Bio,
                     u.Specialization
                 }).FirstOrDefaultAsync();
@@ -142,7 +148,7 @@ namespace ELearningPlatform.Controllers
                     id = c.Id,
                     title = c.Title,
                     description = c.Description,
-                    coverImageUrl = c.CoverImageUrl,
+                    coverImageUrl = string.IsNullOrWhiteSpace(c.CoverImageUrl) ? "/assets/images/default-cover.jpg" : c.CoverImageUrl,
                     price = c.Price,
                     isFree = c.IsFree,
                     discountPercentage = c.DiscountPercentage,
@@ -254,5 +260,6 @@ namespace ELearningPlatform.Controllers
         public string PhoneNumber { get; set; } = string.Empty;
         public string Bio { get; set; } = string.Empty;
         public string Specialization { get; set; } = string.Empty;
+        public string? NewPassword { get; set; }
     }
 }
