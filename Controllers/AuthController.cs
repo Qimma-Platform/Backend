@@ -82,7 +82,7 @@ namespace ELearningPlatform.Controllers
                 }
                 catch { }
 
-                string frontendUrl = "https://qimma-alpha.vercel.app";
+                string frontendUrl = "https://qimma-academy.vercel.app";
                 if (Request.Headers.TryGetValue("Origin", out var origin) && !string.IsNullOrWhiteSpace(origin))
                 {
                     frontendUrl = origin.ToString().TrimEnd('/');

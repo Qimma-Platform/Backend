@@ -70,6 +70,21 @@ namespace ELearningPlatform.Controllers
                 lastName = names[names.Length - 1];
             }
 
+            string clientDomain = "https://qimma-academy.vercel.app";
+            if (Request.Headers.TryGetValue("Origin", out var origin) && !string.IsNullOrWhiteSpace(origin))
+            {
+                clientDomain = origin.ToString().TrimEnd('/');
+            }
+            else if (Request.Headers.TryGetValue("Referer", out var referer) && !string.IsNullOrWhiteSpace(referer))
+            {
+                try
+                {
+                    var uri = new Uri(referer.ToString());
+                    clientDomain = $"{uri.Scheme}://{uri.Authority}";
+                }
+                catch { }
+            }
+
             var payload = new
             {
                 amount = amountInCents,
@@ -104,7 +119,7 @@ namespace ELearningPlatform.Controllers
                 },
                 special_reference = $"{student.Id}_{course.Id}_{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}",
                 notification_url = "https://qimma.runasp.net/api/payment/webhook",
-                redirection_url = $"https://qimma-alpha.vercel.app/learn/{course.Id}?enrolled=true"
+                redirection_url = $"{clientDomain}/learn/{course.Id}?enrolled=true"
             };
 
             var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
