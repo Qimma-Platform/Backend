@@ -375,6 +375,200 @@ namespace ELearningPlatform.Controllers
                 }
             });
         }
+
+        // ==========================================
+        // TEACHER COURSE ENROLLEES & MANUAL ENROLLMENT
+        // ==========================================
+        [HttpGet("courses/{courseId}/enrollees")]
+        public async Task<IActionResult> GetCourseEnrollees(int courseId)
+        {
+            var userIdString = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (!int.TryParse(userIdString, out int instructorId)) return Unauthorized();
+
+            var course = await _context.Courses.FirstOrDefaultAsync(c => c.Id == courseId && c.InstructorId == instructorId);
+            if (course == null) return NotFound(new { message = "Course not found or unauthorized." });
+
+            var enrollees = await _context.CourseEnrollments
+                .Where(ce => ce.CourseId == courseId)
+                .OrderByDescending(ce => ce.EnrolledAt)
+                .Select(ce => new
+                {
+                    studentId = ce.Student.Id,
+                    studentName = ce.Student.Username,
+                    email = ce.Student.Email,
+                    phoneNumber = ce.Student.PhoneNumber,
+                    profileImage = ce.Student.ProfileImage,
+                    totalXP = ce.Student.TotalXP,
+                    enrolledAt = ce.EnrolledAt
+                }).ToListAsync();
+
+            var result = enrollees.Select(e => new
+            {
+                studentId = e.studentId,
+                studentName = e.studentName,
+                email = e.email,
+                phoneNumber = e.phoneNumber,
+                profileImage = e.profileImage,
+                totalXP = e.totalXP,
+                enrolledAt = DateTime.SpecifyKind(e.enrolledAt, DateTimeKind.Utc)
+            }).ToList();
+
+            return Ok(result);
+        }
+
+        [HttpGet("students/available")]
+        public async Task<IActionResult> GetAvailableStudents()
+        {
+            var userIdString = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (!int.TryParse(userIdString, out int instructorId)) return Unauthorized();
+
+            var students = await _context.Users
+                .AsNoTracking()
+                .Where(u => (int)u.Role == 0)
+                .OrderBy(u => u.Username)
+                .Select(u => new
+                {
+                    id = u.Id,
+                    username = u.Username,
+                    email = u.Email,
+                    phoneNumber = u.PhoneNumber,
+                    profileImage = u.ProfileImage,
+                    totalXP = u.TotalXP
+                }).ToListAsync();
+
+            return Ok(students);
+        }
+
+        [HttpPost("courses/{courseId}/enroll")]
+        public async Task<IActionResult> EnrollStudent(int courseId, [FromBody] TeacherEnrollStudentDto dto)
+        {
+            var userIdString = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (!int.TryParse(userIdString, out int instructorId)) return Unauthorized();
+
+            var course = await _context.Courses.FirstOrDefaultAsync(c => c.Id == courseId && c.InstructorId == instructorId);
+            if (course == null) return NotFound(new { message = "Course not found or unauthorized." });
+
+            var student = await _context.Users.FirstOrDefaultAsync(u => u.Id == dto.StudentId && (int)u.Role == 0);
+            if (student == null) return NotFound(new { message = "Student not found." });
+
+            var alreadyEnrolled = await _context.CourseEnrollments.AnyAsync(ce => ce.CourseId == courseId && ce.StudentId == dto.StudentId);
+            if (alreadyEnrolled) return BadRequest(new { message = "Student is already enrolled in this course." });
+
+            var enrollment = new CourseEnrollment
+            {
+                CourseId = courseId,
+                StudentId = dto.StudentId,
+                EnrolledAt = DateTime.UtcNow
+            };
+
+            _context.CourseEnrollments.Add(enrollment);
+
+            bool isFree = course.IsFree || course.Price == 0;
+            if (!isFree && course.Price > 0)
+            {
+                decimal actualPaid = course.DiscountPercentage > 0
+                    ? Math.Round(course.Price - (course.Price * course.DiscountPercentage / 100m), 2)
+                    : course.Price;
+
+                var instructor = await _context.Users.FindAsync(instructorId);
+                decimal instructorShare = Math.Round(actualPaid * 0.8m, 2);
+                decimal platformShare = actualPaid - instructorShare;
+                if (instructor != null)
+                {
+                    instructor.WalletBalance += instructorShare;
+                }
+
+                _context.PaymentTransactions.Add(new PaymentTransaction
+                {
+                    StudentId = student.Id,
+                    StudentName = student.Username,
+                    StudentEmail = student.Email ?? "",
+                    StudentPhone = student.PhoneNumber,
+                    CourseId = course.Id,
+                    CourseTitle = course.Title,
+                    InstructorId = instructorId,
+                    InstructorName = instructor?.Username ?? "Instructor",
+                    AmountPaid = actualPaid,
+                    PaymentStatus = "PAID",
+                    EnrolledAt = DateTime.UtcNow
+                });
+
+                // In-app notification for Teacher
+                _context.Notifications.Add(new Notification
+                {
+                    UserId = instructorId,
+                    Message = $"طالب جديد انضم! قمت بتسجيل الطالب '{student.Username}' في كورس '{course.Title}' بمبلغ {actualPaid} ج.م (أرباحك: {instructorShare} ج.م).",
+                    CreatedAt = DateTime.UtcNow,
+                    IsRead = false
+                });
+
+                // In-app notification for Admins
+                var adminIds = await _context.Users.Where(u => (int)u.Role == 2).Select(u => u.Id).ToListAsync();
+                foreach (var aId in adminIds)
+                {
+                    _context.Notifications.Add(new Notification
+                    {
+                        UserId = aId,
+                        Message = $"ENROLLMENT_PAID||اشتراك كورس مدفوع (يدوي بواسطة المعلم): قام المعلم '{instructor?.Username}' بتسجيل الطالب '{student.Username}' في كورس '{course.Title}' بمبلغ {actualPaid} ج.م (نسبة المنصة: {platformShare} ج.م، نسبة المعلم: {instructorShare} ج.م)||Paid Enrollment (Teacher manual): Teacher '{instructor?.Username}' enrolled student '{student.Username}' in course '{course.Title}' for {actualPaid} EGP",
+                        CreatedAt = DateTime.UtcNow,
+                        IsRead = false
+                    });
+                }
+            }
+            else
+            {
+                // In-app notification for Teacher (Free)
+                _context.Notifications.Add(new Notification
+                {
+                    UserId = instructorId,
+                    Message = $"طالب جديد انضم! قمت بتسجيل الطالب '{student.Username}' في الكورس المجاني '{course.Title}'.",
+                    CreatedAt = DateTime.UtcNow,
+                    IsRead = false
+                });
+
+                // In-app notification for Admins (Free)
+                var adminIds = await _context.Users.Where(u => (int)u.Role == 2).Select(u => u.Id).ToListAsync();
+                foreach (var aId in adminIds)
+                {
+                    _context.Notifications.Add(new Notification
+                    {
+                        UserId = aId,
+                        Message = $"ENROLLMENT||اشتراك كورس مجاني (يدوي بواسطة المعلم): قام المعلم بتسجيل الطالب '{student.Username}' في كورس '{course.Title}'||Free Enrollment (Teacher manual): Student '{student.Username}' enrolled in course '{course.Title}'",
+                        CreatedAt = DateTime.UtcNow,
+                        IsRead = false
+                    });
+                }
+            }
+
+            await _context.SaveChangesAsync();
+
+            return Ok(new { message = "Student enrolled successfully." });
+        }
+
+        [HttpDelete("courses/{courseId}/enroll/{studentId}")]
+        public async Task<IActionResult> UnenrollStudent(int courseId, int studentId)
+        {
+            var userIdString = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (!int.TryParse(userIdString, out int instructorId)) return Unauthorized();
+
+            var course = await _context.Courses.FirstOrDefaultAsync(c => c.Id == courseId && c.InstructorId == instructorId);
+            if (course == null) return NotFound(new { message = "Course not found or unauthorized." });
+
+            var enrollment = await _context.CourseEnrollments
+                .FirstOrDefaultAsync(ce => ce.CourseId == courseId && ce.StudentId == studentId);
+
+            if (enrollment == null) return NotFound(new { message = "Enrollment not found." });
+
+            _context.CourseEnrollments.Remove(enrollment);
+            await _context.SaveChangesAsync();
+
+            return Ok(new { message = "Student unenrolled successfully." });
+        }
+    }
+
+    public class TeacherEnrollStudentDto
+    {
+        public int StudentId { get; set; }
     }
 
     public class EnrollmentMetricDto

@@ -1128,11 +1128,51 @@ namespace ELearningPlatform.Controllers
             };
 
             _context.CourseEnrollments.Add(enrollment);
+
+            bool isFree = course.IsFree || course.Price == 0;
+            if (!isFree && course.Price > 0)
+            {
+                decimal actualPaid = course.DiscountPercentage > 0
+                    ? Math.Round(course.Price - (course.Price * course.DiscountPercentage / 100m), 2)
+                    : course.Price;
+
+                var instructor = await _context.Users.FindAsync(course.InstructorId);
+                decimal instructorShare = Math.Round(actualPaid * 0.8m, 2);
+                decimal platformShare = actualPaid - instructorShare;
+                if (instructor != null)
+                {
+                    instructor.WalletBalance += instructorShare;
+                }
+
+                _context.PaymentTransactions.Add(new PaymentTransaction
+                {
+                    StudentId = student.Id,
+                    StudentName = student.Username,
+                    StudentEmail = student.Email ?? "",
+                    StudentPhone = student.PhoneNumber,
+                    CourseId = course.Id,
+                    CourseTitle = course.Title,
+                    InstructorId = course.InstructorId,
+                    InstructorName = instructor?.Username ?? "Instructor",
+                    AmountPaid = actualPaid,
+                    PaymentStatus = "PAID",
+                    EnrolledAt = DateTime.UtcNow
+                });
+
+                // Notify teacher
+                _context.Notifications.Add(new Notification
+                {
+                    UserId = course.InstructorId,
+                    Message = $"طالب جديد انضم! لقد قام المشرف بتسجيل الطالب '{student.Username}' في كورس '{course.Title}' (أرباحك: {instructorShare} ج.م).",
+                    CreatedAt = DateTime.UtcNow,
+                    IsRead = false
+                });
+            }
+
             await _context.SaveChangesAsync();
 
             await LogActionAsync("ENROLL", "Enrollment", $"Enrolled student '{student.Username}' into course '{course.Title}'");
 
-            bool isFree = course.IsFree || course.Price == 0;
             string typeStrAr = isFree ? "مجاني" : $"مدفوع ({course.Price} ج.م)";
             string typeStrEn = isFree ? "Free" : $"Paid ({course.Price} EGP)";
             await NotifyAdminsAsync($"ENROLLMENT||اشتراك جديد ({typeStrAr}): تم تسجيل الطالب '{student.Username}' في كورس '{course.Title}' بواسطة المشرف||Course Enrollment ({typeStrEn}): Student '{student.Username}' enrolled in '{course.Title}' by Admin");
