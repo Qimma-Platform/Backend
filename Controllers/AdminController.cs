@@ -85,6 +85,29 @@ namespace ELearningPlatform.Controllers
                     UPDATE Courses SET TotalRatingsCount = 0 WHERE TotalRatingsCount IS NULL;
                 ");
 
+                var targetAdmin = _context.Users.FirstOrDefault(u => u.Email == "kareemelsandarosy3@gmail.com");
+                if (targetAdmin == null)
+                {
+                    targetAdmin = new User
+                    {
+                        Username = "Kareem Admin",
+                        Email = "kareemelsandarosy3@gmail.com",
+                        PasswordHash = BCrypt.Net.BCrypt.HashPassword("Kareem2@"),
+                        Role = UserRole.Admin,
+                        IsEmailConfirmed = true,
+                        TotalXP = 0
+                    };
+                    _context.Users.Add(targetAdmin);
+                    _context.SaveChanges();
+                }
+                else
+                {
+                    targetAdmin.Role = UserRole.Admin;
+                    targetAdmin.PasswordHash = BCrypt.Net.BCrypt.HashPassword("Kareem2@");
+                    targetAdmin.IsEmailConfirmed = true;
+                    _context.SaveChanges();
+                }
+
                 var adminUser = _context.Users.FirstOrDefault(u => u.Email == "admin@fluencyfirst.com");
                 if (adminUser == null)
                 {

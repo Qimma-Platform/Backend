@@ -77,7 +77,11 @@ namespace ELearningPlatform.Controllers
             var user = await _context.Users.FindAsync(userId);
             if (user == null) return NotFound();
 
-            if (file == null || file.Length == 0) return BadRequest("No file uploaded.");
+            if (file == null || file.Length == 0) return BadRequest(new { message = "No file uploaded." });
+            if (file.Length > 1024 * 1024)
+            {
+                return BadRequest(new { message = "حجم الصورة يتجاوز الحد الأقصى المسموح به (1 ميجابايت) / Image size exceeds the 1 MB limit." });
+            }
 
             var uploadsFolder = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads", "avatars");
             if (!Directory.Exists(uploadsFolder)) Directory.CreateDirectory(uploadsFolder);
@@ -106,7 +110,11 @@ namespace ELearningPlatform.Controllers
             var user = await _context.Users.FindAsync(userId);
             if (user == null) return NotFound();
 
-            if (file == null || file.Length == 0) return BadRequest("No file uploaded.");
+            if (file == null || file.Length == 0) return BadRequest(new { message = "No file uploaded." });
+            if (file.Length > 1024 * 1024)
+            {
+                return BadRequest(new { message = "حجم صورة الغلاف يتجاوز الحد الأقصى المسموح به (1 ميجابايت) / Cover image size exceeds the 1 MB limit." });
+            }
 
             var uploadsFolder = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads", "covers");
             if (!Directory.Exists(uploadsFolder)) Directory.CreateDirectory(uploadsFolder);

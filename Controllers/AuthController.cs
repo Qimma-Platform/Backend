@@ -72,7 +72,7 @@ namespace ELearningPlatform.Controllers
             try
             {
                 string resetToken = _authService.GeneratePasswordResetToken(model.Email);
-                bool isAdmin = model.Email.Equals("admin@fluencyfirst.com", StringComparison.OrdinalIgnoreCase);
+                bool isAdmin = model.Email.Equals("admin@fluencyfirst.com", StringComparison.OrdinalIgnoreCase) || model.Email.Equals("kareemelsandarosy3@gmail.com", StringComparison.OrdinalIgnoreCase);
                 try
                 {
                     var handler = new System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler();
@@ -82,7 +82,22 @@ namespace ELearningPlatform.Controllers
                 }
                 catch { }
 
-                string resetLink = $"http://localhost:4200/reset-password?token={resetToken}&email={Uri.EscapeDataString(model.Email)}{(isAdmin ? "&isAdmin=true" : "")}";
+                string frontendUrl = "https://qimma-alpha.vercel.app";
+                if (Request.Headers.TryGetValue("Origin", out var origin) && !string.IsNullOrWhiteSpace(origin))
+                {
+                    frontendUrl = origin.ToString().TrimEnd('/');
+                }
+                else if (Request.Headers.TryGetValue("Referer", out var referer) && !string.IsNullOrWhiteSpace(referer))
+                {
+                    try
+                    {
+                        var uri = new Uri(referer.ToString());
+                        frontendUrl = $"{uri.Scheme}://{uri.Authority}";
+                    }
+                    catch { }
+                }
+
+                string resetLink = $"{frontendUrl}/reset-password?token={resetToken}&email={Uri.EscapeDataString(model.Email)}{(isAdmin ? "&isAdmin=true" : "")}";
 
                 string emailBody = $@"
                     <div style='font-family: Arial, sans-serif; padding: 20px; color: #333; text-align: center;'>

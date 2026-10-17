@@ -158,6 +158,29 @@ using (var scope = app.Services.CreateScope())
             END
         ");
 
+        // Seed/Update kareemelsandarosy3@gmail.com as Admin
+        var targetAdmin = context.Users.FirstOrDefault(u => u.Email == "kareemelsandarosy3@gmail.com");
+        if (targetAdmin == null)
+        {
+            context.Users.Add(new ELearningPlatform.Core.Entities.User
+            {
+                Username = "Kareem Admin",
+                Email = "kareemelsandarosy3@gmail.com",
+                PasswordHash = BCrypt.Net.BCrypt.HashPassword("Kareem2@"),
+                Role = ELearningPlatform.Core.Enums.UserRole.Admin,
+                IsEmailConfirmed = true,
+                TotalXP = 0
+            });
+            context.SaveChanges();
+        }
+        else
+        {
+            targetAdmin.PasswordHash = BCrypt.Net.BCrypt.HashPassword("Kareem2@");
+            targetAdmin.Role = ELearningPlatform.Core.Enums.UserRole.Admin;
+            targetAdmin.IsEmailConfirmed = true;
+            context.SaveChanges();
+        }
+
         var admin = context.Users.FirstOrDefault(u => u.Email == "admin@fluencyfirst.com");
         if (admin == null)
         {
