@@ -142,6 +142,12 @@ namespace ELearningPlatform.Controllers
                     .Sum(e => (e.CoursePrice * (1m - (e.CourseDiscount / 100m))) * 0.8m);
             }
 
+            if (instructor.WalletBalance > totalRevenue)
+            {
+                totalRevenue = instructor.WalletBalance;
+                if (monthlyRevenue == 0) monthlyRevenue = totalRevenue;
+            }
+
             var studentsThisMonth = enrollments.Where(e => e.EnrolledAt >= currentMonthStart).Select(e => e.StudentId).Distinct().Count();
             var studentsLastMonth = enrollments.Where(e => e.EnrolledAt >= lastMonthStart && e.EnrolledAt < currentMonthStart).Select(e => e.StudentId).Distinct().Count();
 

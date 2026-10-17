@@ -295,16 +295,14 @@ namespace ELearningPlatform.Infrastructure.Services
 
             var submittedAssignmentIds = submissions.Select(s => s.AssignmentId).ToHashSet();
             var unsubmittedAssignments = allAssignments.Where(a => !submittedAssignmentIds.Contains(a.Id)).ToList();
-            var nowLocal = DateTime.Now;
             var nowUtc = DateTime.UtcNow;
 
             bool IsDue(DateTime? dueDate)
             {
                 if (!dueDate.HasValue) return true;
                 var d = dueDate.Value;
-                if (d.Kind == DateTimeKind.Utc)
-                    return d >= nowUtc;
-                return d >= nowLocal;
+                DateTime dueUtc = d.Kind == DateTimeKind.Utc ? d : DateTime.SpecifyKind(d, DateTimeKind.Utc);
+                return dueUtc >= nowUtc;
             }
 
             var pending = unsubmittedAssignments

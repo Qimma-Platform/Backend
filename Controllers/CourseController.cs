@@ -148,7 +148,12 @@ namespace ELearningPlatform.Controllers
 
                 if (!isFree && course.Price > 0)
                 {
+                    decimal actualPaid = course.Price - (course.Price * course.DiscountPercentage / 100m);
                     var inst = await _context.Users.FindAsync(course.InstructorId);
+                    if (inst != null)
+                    {
+                        inst.WalletBalance += actualPaid * 0.8m;
+                    }
                     _context.PaymentTransactions.Add(new ELearningPlatform.Core.Entities.PaymentTransaction
                     {
                         StudentId = studentId,
@@ -159,7 +164,7 @@ namespace ELearningPlatform.Controllers
                         CourseTitle = course.Title,
                         InstructorId = course.InstructorId,
                         InstructorName = inst?.Username ?? "Instructor",
-                        AmountPaid = course.Price,
+                        AmountPaid = actualPaid,
                         PaymentStatus = "PAID",
                         EnrolledAt = DateTime.UtcNow
                     });

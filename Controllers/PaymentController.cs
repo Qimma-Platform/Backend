@@ -101,7 +101,10 @@ namespace ELearningPlatform.Controllers
                 {
                     course_id = course.Id,
                     student_id = student.Id
-                }
+                },
+                special_reference = $"{student.Id}_{course.Id}_{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}",
+                notification_url = "https://qimma.runasp.net/api/payment/webhook",
+                redirection_url = $"https://qimma-alpha.vercel.app/learn/{course.Id}?enrolled=true"
             };
 
             var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
@@ -139,25 +142,85 @@ namespace ELearningPlatform.Controllers
         {
             try
             {
-                Console.WriteLine("Webhook Received successfully!");
+                Console.WriteLine("Webhook Received: " + payload.ToString());
 
-                var obj = payload.GetProperty("obj");
-                bool isSuccess = obj.GetProperty("success").GetBoolean();
+                JsonElement obj;
+                if (payload.TryGetProperty("obj", out var objProp))
+                {
+                    obj = objProp;
+                }
+                else
+                {
+                    obj = payload;
+                }
+
+                bool isSuccess = false;
+                if (obj.TryGetProperty("success", out var successProp))
+                {
+                    if (successProp.ValueKind == JsonValueKind.True) isSuccess = true;
+                    else if (successProp.ValueKind == JsonValueKind.String && bool.TryParse(successProp.GetString(), out bool b)) isSuccess = b;
+                }
 
                 if (isSuccess)
                 {
-                    var paymentKeyClaims = obj.GetProperty("payment_key_claims");
-                    var extra = paymentKeyClaims.GetProperty("extra");
+                    int courseId = 0;
+                    int studentId = 0;
 
-                    int courseId = extra.GetProperty("course_id").GetInt32();
-                    int studentId = extra.GetProperty("student_id").GetInt32();
+                    // 1. Try payment_key_claims.extra
+                    if (obj.TryGetProperty("payment_key_claims", out var pkc) && pkc.TryGetProperty("extra", out var extra))
+                    {
+                        if (extra.TryGetProperty("course_id", out var cIdProp)) courseId = cIdProp.GetInt32();
+                        if (extra.TryGetProperty("student_id", out var sIdProp)) studentId = sIdProp.GetInt32();
+                    }
 
-                    int amountCents = obj.GetProperty("amount_cents").GetInt32();
-                    decimal totalPaid = amountCents / 100m;
+                    // 2. Try obj.data.extras or obj.extras
+                    if ((courseId == 0 || studentId == 0) && obj.TryGetProperty("data", out var dataProp))
+                    {
+                        if (dataProp.TryGetProperty("extras", out var dExtras))
+                        {
+                            if (dExtras.TryGetProperty("course_id", out var cIdProp)) courseId = cIdProp.GetInt32();
+                            if (dExtras.TryGetProperty("student_id", out var sIdProp)) studentId = sIdProp.GetInt32();
+                        }
+                    }
+
+                    // 3. Try special_reference / merchant_order_id (format: {studentId}_{courseId}_{timestamp})
+                    if (courseId == 0 || studentId == 0)
+                    {
+                        string specRef = "";
+                        if (obj.TryGetProperty("special_reference", out var sRefProp)) specRef = sRefProp.GetString() ?? "";
+                        if (string.IsNullOrEmpty(specRef) && obj.TryGetProperty("order", out var orderProp) && orderProp.TryGetProperty("merchant_order_id", out var mOrderIdProp))
+                        {
+                            specRef = mOrderIdProp.GetString() ?? "";
+                        }
+
+                        if (!string.IsNullOrEmpty(specRef) && specRef.Contains('_'))
+                        {
+                            var parts = specRef.Split('_');
+                            if (parts.Length >= 2 && int.TryParse(parts[0], out int sId) && int.TryParse(parts[1], out int cId))
+                            {
+                                studentId = sId;
+                                courseId = cId;
+                            }
+                        }
+                    }
+
+                    if (courseId == 0 || studentId == 0)
+                    {
+                        Console.WriteLine("⚠️ Webhook could not find courseId or studentId in payload.");
+                        return Ok();
+                    }
+
+                    int amountCents = 0;
+                    if (obj.TryGetProperty("amount_cents", out var acProp)) amountCents = acProp.GetInt32();
+                    decimal totalPaid = amountCents > 0 ? (amountCents / 100m) : 0m;
 
                     var course = await _context.Courses.FindAsync(courseId);
                     if (course != null)
                     {
+                        if (totalPaid <= 0)
+                        {
+                            totalPaid = course.Price - (course.Price * course.DiscountPercentage / 100m);
+                        }
                         var isAlreadyEnrolled = await _context.CourseEnrollments
                             .AnyAsync(e => e.StudentId == studentId && e.CourseId == courseId);
 

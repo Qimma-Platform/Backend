@@ -32,13 +32,21 @@ namespace ELearningPlatform.Core.DTOs
             get
             {
                 if (string.IsNullOrWhiteSpace(_coverImageUrl)) return _coverImageUrl;
+                if (_coverImageUrl.Contains("localhost:5162"))
+                {
+                    return _coverImageUrl.Replace("http://localhost:5162", "https://qimma.runasp.net");
+                }
                 if (_coverImageUrl.StartsWith("http://", System.StringComparison.OrdinalIgnoreCase) ||
                     _coverImageUrl.StartsWith("https://", System.StringComparison.OrdinalIgnoreCase) ||
                     _coverImageUrl.StartsWith("data:", System.StringComparison.OrdinalIgnoreCase))
                 {
                     return _coverImageUrl;
                 }
-                return $"http://localhost:5162{(_coverImageUrl.StartsWith('/') ? "" : "/")}{_coverImageUrl}";
+                if (_coverImageUrl.StartsWith("/assets/") || _coverImageUrl.StartsWith("assets/"))
+                {
+                    return _coverImageUrl.StartsWith('/') ? _coverImageUrl : $"/{_coverImageUrl}";
+                }
+                return $"https://qimma.runasp.net{(_coverImageUrl.StartsWith('/') ? "" : "/")}{_coverImageUrl}";
             }
             set => _coverImageUrl = value;
         }
