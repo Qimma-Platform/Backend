@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.SignalR;
+using Microsoft.AspNetCore.SignalR;
 using System.Collections.Concurrent;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
@@ -75,7 +75,7 @@ namespace ELearningPlatform.Hubs
                         notifications.Add(new Notification
                         {
                             UserId = studentId,
-                            Message = $"بدأ المعلم {instructorName} بثاً مباشراً لكورس '{courseTitle}'. انضم الآن!",
+                            Message = $"LIVE_SESSION||بدأ المعلم {instructorName} بثاً مباشراً لكورس '{courseTitle}'. انضم الآن!||Instructor {instructorName} started a live session for course '{courseTitle}'. Join now!",
                             CreatedAt = DateTime.UtcNow,
                             IsRead = false
                         });

@@ -504,11 +504,11 @@ namespace ELearningPlatform.Controllers
                     EnrolledAt = DateTime.UtcNow
                 });
 
-                // In-app notification for Teacher
+                // In-app notification for Teacher (Paid)
                 _context.Notifications.Add(new Notification
                 {
                     UserId = course.InstructorId,
-                    Message = $"طالب جديد انضم! تم تسجيل الطالب '{student.Username}' في كورس '{course.Title}' بمبلغ {actualPaid} ج.م (أرباحك: {instructorShare} ج.م).",
+                    Message = $"ENROLLMENT_PAID||طالب جديد انضم! تم تسجيل الطالب '{student.Username}' في كورس '{course.Title}' بمبلغ {actualPaid} ج.م (أرباحك: {instructorShare} ج.م)||New student enrolled! Student '{student.Username}' was enrolled in course '{course.Title}' for {actualPaid} EGP (Your profit: {instructorShare} EGP)",
                     CreatedAt = DateTime.UtcNow,
                     IsRead = false
                 });
@@ -520,7 +520,7 @@ namespace ELearningPlatform.Controllers
                     _context.Notifications.Add(new Notification
                     {
                         UserId = aId,
-                        Message = $"ENROLLMENT_PAID||اشتراك كورس مدفوع (يدوي): تم تسجيل الطالب '{student.Username}' في كورس '{course.Title}' بمبلغ {actualPaid} ج.م (نسبة المنصة: {platformShare} ج.م، نسبة المعلم: {instructorShare} ج.م)||Paid Enrollment: Student '{student.Username}' enrolled in course '{course.Title}' for {actualPaid} EGP",
+                        Message = $"ENROLLMENT_PAID||اشتراك كورس مدفوع (يدوي): تم تسجيل الطالب '{student.Username}' في كورس '{course.Title}' بمبلغ {actualPaid} ج.م (نسبة المنصة: {platformShare} ج.م، نسبة المعلم: {instructorShare} ج.م)||Paid Enrollment: Student '{student.Username}' enrolled in course '{course.Title}' for {actualPaid} EGP (Platform: {platformShare} EGP, Instructor: {instructorShare} EGP)",
                         CreatedAt = DateTime.UtcNow,
                         IsRead = false
                     });
@@ -532,7 +532,7 @@ namespace ELearningPlatform.Controllers
                 _context.Notifications.Add(new Notification
                 {
                     UserId = course.InstructorId,
-                    Message = $"طالب جديد انضم! تم تسجيل الطالب '{student.Username}' في الكورس المجاني '{course.Title}'.",
+                    Message = $"ENROLLMENT||طالب جديد انضم! تم تسجيل الطالب '{student.Username}' في الكورس المجاني '{course.Title}'||New student enrolled! Student '{student.Username}' was enrolled in free course '{course.Title}'",
                     CreatedAt = DateTime.UtcNow,
                     IsRead = false
                 });

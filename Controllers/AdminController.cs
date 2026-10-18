@@ -1221,11 +1221,22 @@ namespace ELearningPlatform.Controllers
                     EnrolledAt = DateTime.UtcNow
                 });
 
-                // Notify teacher
+                // Notify teacher (Paid)
                 _context.Notifications.Add(new Notification
                 {
                     UserId = course.InstructorId,
-                    Message = $"طالب جديد انضم! لقد قام المشرف بتسجيل الطالب '{student.Username}' في كورس '{course.Title}' (أرباحك: {instructorShare} ج.م).",
+                    Message = $"ENROLLMENT_PAID||طالب جديد انضم! لقد قام المشرف بتسجيل الطالب '{student.Username}' في كورس '{course.Title}' بمبلغ {actualPaid} ج.م (أرباحك: {instructorShare} ج.م)||New student enrolled! Admin enrolled student '{student.Username}' in course '{course.Title}' for {actualPaid} EGP (Your profit: {instructorShare} EGP)",
+                    CreatedAt = DateTime.UtcNow,
+                    IsRead = false
+                });
+            }
+            else
+            {
+                // Notify teacher (Free)
+                _context.Notifications.Add(new Notification
+                {
+                    UserId = course.InstructorId,
+                    Message = $"ENROLLMENT||طالب جديد انضم! لقد قام المشرف بتسجيل الطالب '{student.Username}' في الكورس المجاني '{course.Title}'||New student enrolled! Admin enrolled student '{student.Username}' in free course '{course.Title}'",
                     CreatedAt = DateTime.UtcNow,
                     IsRead = false
                 });

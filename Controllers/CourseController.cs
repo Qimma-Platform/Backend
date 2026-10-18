@@ -125,10 +125,21 @@ namespace ELearningPlatform.Controllers
                 string enrollTypeAr = isFree ? "مجاني" : $"مدفوع ({course.Price} ج.م)";
                 string enrollTypeEn = isFree ? "Free" : $"Paid ({course.Price} EGP)";
 
+                decimal coursePaid = !isFree && course.Price > 0 ? (course.Price - (course.Price * course.DiscountPercentage / 100m)) : 0m;
+                decimal teacherProfit = Math.Round(coursePaid * 0.8m, 2);
+
+                string teacherMsgAr = isFree
+                    ? $"طالب جديد انضم! لقد قام الطالب '{studentDisplay}' بالاشتراك في الكورس المجاني '{course.Title}'"
+                    : $"طالب جديد انضم! لقد قام الطالب '{studentDisplay}' بالاشتراك في كورس '{course.Title}' بمبلغ {coursePaid} ج.م (أرباحك: {teacherProfit} ج.م)";
+                string teacherMsgEn = isFree
+                    ? $"New student enrolled! Student '{studentDisplay}' enrolled in free course '{course.Title}'"
+                    : $"New student enrolled! Student '{studentDisplay}' enrolled in course '{course.Title}' for {coursePaid} EGP (Your profit: {teacherProfit} EGP)";
+                string teacherTag = isFree ? "ENROLLMENT" : "ENROLLMENT_PAID";
+
                 var teacherNotif = new Notification
                 {
                     UserId = course.InstructorId,
-                    Message = $"طالب جديد انضم! لقد قام الطالب '{studentDisplay}' بالاشتراك في كورس '{course.Title}'.",
+                    Message = $"{teacherTag}||{teacherMsgAr}||{teacherMsgEn}",
                     CreatedAt = DateTime.UtcNow,
                     IsRead = false
                 };

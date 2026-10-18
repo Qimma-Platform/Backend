@@ -279,7 +279,7 @@ namespace ELearningPlatform.Controllers
                             var notifyTeacher = new Notification
                             {
                                 UserId = course.InstructorId,
-                                Message = $"طالب جديد انضم! لقد قام الطالب '{sName}' بالاشتراك في كورس '{course.Title}'.",
+                                Message = $"ENROLLMENT_PAID||طالب جديد انضم! لقد قام الطالب '{sName}' بالاشتراك في كورس '{course.Title}' بمبلغ {totalPaid} ج.م (أرباحك: {instructorShare} ج.م)||New student enrolled! Student '{sName}' enrolled in course '{course.Title}' for {totalPaid} EGP (Your profit: {instructorShare} EGP)",
                                 CreatedAt = DateTime.UtcNow,
                                 IsRead = false
                             };
