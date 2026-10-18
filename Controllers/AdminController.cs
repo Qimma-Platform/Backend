@@ -211,6 +211,64 @@ namespace ELearningPlatform.Controllers
             catch { }
         }
 
+        private async Task EnsurePaidEnrollmentTransactionsAsync()
+        {
+            try
+            {
+                var missingPaidEnrollments = await _context.CourseEnrollments
+                    .Include(ce => ce.Student)
+                    .Include(ce => ce.Course)
+                    .ThenInclude(c => c!.Instructor)
+                    .Where(ce => ce.Course != null && (!ce.Course.IsFree && ce.Course.Price > 0) && ce.Student != null)
+                    .ToListAsync();
+
+                bool hasChanges = false;
+                foreach (var pe in missingPaidEnrollments)
+                {
+                    var alreadyExists = await _context.PaymentTransactions
+                        .AnyAsync(p => p.CourseId == pe.CourseId && p.StudentId == pe.StudentId);
+
+                    if (!alreadyExists)
+                    {
+                        var course = pe.Course!;
+                        var student = pe.Student!;
+                        decimal actualPaid = course.DiscountPercentage > 0
+                            ? Math.Round(course.Price - (course.Price * course.DiscountPercentage / 100m), 2)
+                            : course.Price;
+
+                        decimal instructorShare = Math.Round(actualPaid * 0.8m, 2);
+                        if (course.Instructor != null)
+                        {
+                            course.Instructor.WalletBalance += instructorShare;
+                        }
+
+                        _context.PaymentTransactions.Add(new PaymentTransaction
+                        {
+                            StudentId = student.Id,
+                            StudentName = student.Username,
+                            StudentEmail = student.Email ?? "",
+                            StudentPhone = student.PhoneNumber,
+                            CourseId = course.Id,
+                            CourseTitle = course.Title,
+                            InstructorId = course.InstructorId,
+                            InstructorName = course.Instructor?.Username ?? "Instructor",
+                            AmountPaid = actualPaid,
+                            PaymentStatus = "PAID",
+                            EnrolledAt = pe.EnrolledAt
+                        });
+
+                        hasChanges = true;
+                    }
+                }
+
+                if (hasChanges)
+                {
+                    await _context.SaveChangesAsync();
+                }
+            }
+            catch { }
+        }
+
         // ==========================================
         // 1. DASHBOARD OVERVIEW & STATS
         // ==========================================
@@ -218,6 +276,8 @@ namespace ELearningPlatform.Controllers
         public async Task<IActionResult> GetDashboardStats([FromQuery] string? timeframe)
         {
             if (!IsAdmin()) return Forbid();
+
+            await EnsurePaidEnrollmentTransactionsAsync();
 
             var totalStudents = await _context.Users.CountAsync(u => (int)u.Role == 0);
             var totalInstructors = await _context.Users.CountAsync(u => (int)u.Role == 1);
@@ -397,6 +457,8 @@ namespace ELearningPlatform.Controllers
         public async Task<IActionResult> GetPaidStudents([FromQuery] string? search)
         {
             if (!IsAdmin()) return Forbid();
+
+            await EnsurePaidEnrollmentTransactionsAsync();
 
             var query = _context.PaymentTransactions.AsQueryable();
 

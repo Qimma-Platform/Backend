@@ -32,6 +32,8 @@ namespace ELearningPlatform.Controllers
             var instructor = await _context.Users.FindAsync(instructorId);
             if (instructor == null) return NotFound();
 
+            await EnsurePaidEnrollmentTransactionsAsync();
+
             var now = DateTime.UtcNow;
             var currentMonthStart = new DateTime(now.Year, now.Month, 1);
             var lastMonthStart = currentMonthStart.AddMonths(-1);
@@ -383,17 +385,22 @@ namespace ELearningPlatform.Controllers
         public async Task<IActionResult> GetCourseEnrollees(int courseId)
         {
             var userIdString = User.FindFirstValue(ClaimTypes.NameIdentifier);
-            if (!int.TryParse(userIdString, out int instructorId)) return Unauthorized();
+            if (!int.TryParse(userIdString, out int currentUserId)) return Unauthorized();
 
-            var course = await _context.Courses.FirstOrDefaultAsync(c => c.Id == courseId && c.InstructorId == instructorId);
+            var caller = await _context.Users.FindAsync(currentUserId);
+            if (caller == null) return Unauthorized();
+            bool isAdmin = (int)caller.Role == 2;
+
+            var course = await _context.Courses.FirstOrDefaultAsync(c => c.Id == courseId && (isAdmin || c.InstructorId == currentUserId));
             if (course == null) return NotFound(new { message = "Course not found or unauthorized." });
 
             var enrollees = await _context.CourseEnrollments
-                .Where(ce => ce.CourseId == courseId)
+                .Include(ce => ce.Student)
+                .Where(ce => ce.CourseId == courseId && ce.Student != null)
                 .OrderByDescending(ce => ce.EnrolledAt)
                 .Select(ce => new
                 {
-                    studentId = ce.Student.Id,
+                    studentId = ce.Student!.Id,
                     studentName = ce.Student.Username,
                     email = ce.Student.Email,
                     phoneNumber = ce.Student.PhoneNumber,
@@ -420,7 +427,7 @@ namespace ELearningPlatform.Controllers
         public async Task<IActionResult> GetAvailableStudents()
         {
             var userIdString = User.FindFirstValue(ClaimTypes.NameIdentifier);
-            if (!int.TryParse(userIdString, out int instructorId)) return Unauthorized();
+            if (!int.TryParse(userIdString, out _)) return Unauthorized();
 
             var students = await _context.Users
                 .AsNoTracking()
@@ -443,9 +450,13 @@ namespace ELearningPlatform.Controllers
         public async Task<IActionResult> EnrollStudent(int courseId, [FromBody] TeacherEnrollStudentDto dto)
         {
             var userIdString = User.FindFirstValue(ClaimTypes.NameIdentifier);
-            if (!int.TryParse(userIdString, out int instructorId)) return Unauthorized();
+            if (!int.TryParse(userIdString, out int currentUserId)) return Unauthorized();
 
-            var course = await _context.Courses.FirstOrDefaultAsync(c => c.Id == courseId && c.InstructorId == instructorId);
+            var caller = await _context.Users.FindAsync(currentUserId);
+            if (caller == null) return Unauthorized();
+            bool isAdmin = (int)caller.Role == 2;
+
+            var course = await _context.Courses.FirstOrDefaultAsync(c => c.Id == courseId && (isAdmin || c.InstructorId == currentUserId));
             if (course == null) return NotFound(new { message = "Course not found or unauthorized." });
 
             var student = await _context.Users.FirstOrDefaultAsync(u => u.Id == dto.StudentId && (int)u.Role == 0);
@@ -470,7 +481,7 @@ namespace ELearningPlatform.Controllers
                     ? Math.Round(course.Price - (course.Price * course.DiscountPercentage / 100m), 2)
                     : course.Price;
 
-                var instructor = await _context.Users.FindAsync(instructorId);
+                var instructor = await _context.Users.FindAsync(course.InstructorId);
                 decimal instructorShare = Math.Round(actualPaid * 0.8m, 2);
                 decimal platformShare = actualPaid - instructorShare;
                 if (instructor != null)
@@ -486,7 +497,7 @@ namespace ELearningPlatform.Controllers
                     StudentPhone = student.PhoneNumber,
                     CourseId = course.Id,
                     CourseTitle = course.Title,
-                    InstructorId = instructorId,
+                    InstructorId = course.InstructorId,
                     InstructorName = instructor?.Username ?? "Instructor",
                     AmountPaid = actualPaid,
                     PaymentStatus = "PAID",
@@ -496,8 +507,8 @@ namespace ELearningPlatform.Controllers
                 // In-app notification for Teacher
                 _context.Notifications.Add(new Notification
                 {
-                    UserId = instructorId,
-                    Message = $"طالب جديد انضم! قمت بتسجيل الطالب '{student.Username}' في كورس '{course.Title}' بمبلغ {actualPaid} ج.م (أرباحك: {instructorShare} ج.م).",
+                    UserId = course.InstructorId,
+                    Message = $"طالب جديد انضم! تم تسجيل الطالب '{student.Username}' في كورس '{course.Title}' بمبلغ {actualPaid} ج.م (أرباحك: {instructorShare} ج.م).",
                     CreatedAt = DateTime.UtcNow,
                     IsRead = false
                 });
@@ -509,7 +520,7 @@ namespace ELearningPlatform.Controllers
                     _context.Notifications.Add(new Notification
                     {
                         UserId = aId,
-                        Message = $"ENROLLMENT_PAID||اشتراك كورس مدفوع (يدوي بواسطة المعلم): قام المعلم '{instructor?.Username}' بتسجيل الطالب '{student.Username}' في كورس '{course.Title}' بمبلغ {actualPaid} ج.م (نسبة المنصة: {platformShare} ج.م، نسبة المعلم: {instructorShare} ج.م)||Paid Enrollment (Teacher manual): Teacher '{instructor?.Username}' enrolled student '{student.Username}' in course '{course.Title}' for {actualPaid} EGP",
+                        Message = $"ENROLLMENT_PAID||اشتراك كورس مدفوع (يدوي): تم تسجيل الطالب '{student.Username}' في كورس '{course.Title}' بمبلغ {actualPaid} ج.م (نسبة المنصة: {platformShare} ج.م، نسبة المعلم: {instructorShare} ج.م)||Paid Enrollment: Student '{student.Username}' enrolled in course '{course.Title}' for {actualPaid} EGP",
                         CreatedAt = DateTime.UtcNow,
                         IsRead = false
                     });
@@ -520,8 +531,8 @@ namespace ELearningPlatform.Controllers
                 // In-app notification for Teacher (Free)
                 _context.Notifications.Add(new Notification
                 {
-                    UserId = instructorId,
-                    Message = $"طالب جديد انضم! قمت بتسجيل الطالب '{student.Username}' في الكورس المجاني '{course.Title}'.",
+                    UserId = course.InstructorId,
+                    Message = $"طالب جديد انضم! تم تسجيل الطالب '{student.Username}' في الكورس المجاني '{course.Title}'.",
                     CreatedAt = DateTime.UtcNow,
                     IsRead = false
                 });
@@ -533,7 +544,7 @@ namespace ELearningPlatform.Controllers
                     _context.Notifications.Add(new Notification
                     {
                         UserId = aId,
-                        Message = $"ENROLLMENT||اشتراك كورس مجاني (يدوي بواسطة المعلم): قام المعلم بتسجيل الطالب '{student.Username}' في كورس '{course.Title}'||Free Enrollment (Teacher manual): Student '{student.Username}' enrolled in course '{course.Title}'",
+                        Message = $"ENROLLMENT||اشتراك كورس مجاني: تم تسجيل الطالب '{student.Username}' في كورس '{course.Title}'||Free Enrollment: Student '{student.Username}' enrolled in course '{course.Title}'",
                         CreatedAt = DateTime.UtcNow,
                         IsRead = false
                     });
@@ -549,9 +560,13 @@ namespace ELearningPlatform.Controllers
         public async Task<IActionResult> UnenrollStudent(int courseId, int studentId)
         {
             var userIdString = User.FindFirstValue(ClaimTypes.NameIdentifier);
-            if (!int.TryParse(userIdString, out int instructorId)) return Unauthorized();
+            if (!int.TryParse(userIdString, out int currentUserId)) return Unauthorized();
 
-            var course = await _context.Courses.FirstOrDefaultAsync(c => c.Id == courseId && c.InstructorId == instructorId);
+            var caller = await _context.Users.FindAsync(currentUserId);
+            if (caller == null) return Unauthorized();
+            bool isAdmin = (int)caller.Role == 2;
+
+            var course = await _context.Courses.FirstOrDefaultAsync(c => c.Id == courseId && (isAdmin || c.InstructorId == currentUserId));
             if (course == null) return NotFound(new { message = "Course not found or unauthorized." });
 
             var enrollment = await _context.CourseEnrollments
@@ -563,6 +578,64 @@ namespace ELearningPlatform.Controllers
             await _context.SaveChangesAsync();
 
             return Ok(new { message = "Student unenrolled successfully." });
+        }
+
+        private async Task EnsurePaidEnrollmentTransactionsAsync()
+        {
+            try
+            {
+                var missingPaidEnrollments = await _context.CourseEnrollments
+                    .Include(ce => ce.Student)
+                    .Include(ce => ce.Course)
+                    .ThenInclude(c => c!.Instructor)
+                    .Where(ce => ce.Course != null && (!ce.Course.IsFree && ce.Course.Price > 0) && ce.Student != null)
+                    .ToListAsync();
+
+                bool hasChanges = false;
+                foreach (var pe in missingPaidEnrollments)
+                {
+                    var alreadyExists = await _context.PaymentTransactions
+                        .AnyAsync(p => p.CourseId == pe.CourseId && p.StudentId == pe.StudentId);
+
+                    if (!alreadyExists)
+                    {
+                        var course = pe.Course!;
+                        var student = pe.Student!;
+                        decimal actualPaid = course.DiscountPercentage > 0
+                            ? Math.Round(course.Price - (course.Price * course.DiscountPercentage / 100m), 2)
+                            : course.Price;
+
+                        decimal instructorShare = Math.Round(actualPaid * 0.8m, 2);
+                        if (course.Instructor != null)
+                        {
+                            course.Instructor.WalletBalance += instructorShare;
+                        }
+
+                        _context.PaymentTransactions.Add(new PaymentTransaction
+                        {
+                            StudentId = student.Id,
+                            StudentName = student.Username,
+                            StudentEmail = student.Email ?? "",
+                            StudentPhone = student.PhoneNumber,
+                            CourseId = course.Id,
+                            CourseTitle = course.Title,
+                            InstructorId = course.InstructorId,
+                            InstructorName = course.Instructor?.Username ?? "Instructor",
+                            AmountPaid = actualPaid,
+                            PaymentStatus = "PAID",
+                            EnrolledAt = pe.EnrolledAt
+                        });
+
+                        hasChanges = true;
+                    }
+                }
+
+                if (hasChanges)
+                {
+                    await _context.SaveChangesAsync();
+                }
+            }
+            catch { }
         }
     }
 
