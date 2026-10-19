@@ -26,59 +26,69 @@ namespace ELearningPlatform.Controllers
         [HttpGet("stats")]
         public async Task<IActionResult> GetDashboardStats([FromQuery] string timeframe = "7days", [FromQuery] string? date = null)
         {
-            var userIdString = User.FindFirstValue(ClaimTypes.NameIdentifier);
-            if (!int.TryParse(userIdString, out int instructorId)) return Unauthorized();
-
-            var instructor = await _context.Users.FindAsync(instructorId);
-            if (instructor == null) return NotFound();
-
-            await EnsurePaidEnrollmentTransactionsAsync();
-
-            var now = DateTime.UtcNow;
-            var currentMonthStart = new DateTime(now.Year, now.Month, 1);
-            var lastMonthStart = currentMonthStart.AddMonths(-1);
-
-            // 1. Get Course IDs, Ratings, and Types for the instructor (lightweight projection)
-            var courses = await _context.Courses
-                .AsNoTracking()
-                .Where(c => c.InstructorId == instructorId)
-                .Select(c => new { c.Id, c.Rating, c.IsFree, c.Price })
-                .ToListAsync();
-
-            var courseIds = courses.Select(c => c.Id).ToList();
-            int paidCoursesCount = courses.Count(c => !c.IsFree && c.Price > 0);
-            int freeCoursesCount = courses.Count(c => c.IsFree || c.Price == 0);
-
-            double instructorRating = 0;
-            var ratedCourses = courses.Where(c => (c.Rating ?? 0m) > 0).ToList();
-            if (ratedCourses.Any())
+            try
             {
-                instructorRating = Math.Round((double)ratedCourses.Average(c => c.Rating ?? 0m), 1);
-            }
+                var userIdString = User.FindFirstValue(ClaimTypes.NameIdentifier);
+                if (!int.TryParse(userIdString, out int instructorId)) return Unauthorized();
 
-            // 2. High-Performance Metrics (Single Queries)
-            int totalStudentsCount = 0;
-            int totalLessonsCount = 0;
-            int totalQuizzesCount = 0;
+                var instructor = await _context.Users.FindAsync(instructorId);
+                if (instructor == null) return NotFound();
 
-            if (courseIds.Count > 0)
-            {
-                totalStudentsCount = await _context.CourseEnrollments
-                    .Where(e => courseIds.Contains(e.CourseId))
-                    .Select(e => e.StudentId)
-                    .Distinct()
-                    .CountAsync();
+                await EnsurePaidEnrollmentTransactionsAsync();
 
-                totalLessonsCount = await _context.Lessons
-                    .Where(l => courseIds.Contains(l.CourseId))
-                    .CountAsync();
+                var now = DateTime.UtcNow;
+                var currentMonthStart = new DateTime(now.Year, now.Month, 1);
+                var lastMonthStart = currentMonthStart.AddMonths(-1);
 
-                totalQuizzesCount = await _context.QuizAttempts
-                    .Where(qa => (qa.Lesson != null && courseIds.Contains(qa.Lesson.CourseId)) || (qa.CourseId.HasValue && courseIds.Contains(qa.CourseId.Value)))
-                    .Select(qa => qa.LessonId ?? qa.CourseId)
-                    .Distinct()
-                    .CountAsync();
-            }
+                // 1. Get Course IDs, Ratings, and Types for the instructor (lightweight projection)
+                var courses = await _context.Courses
+                    .AsNoTracking()
+                    .Where(c => c.InstructorId == instructorId)
+                    .Select(c => new { c.Id, c.Rating, c.IsFree, c.Price })
+                    .ToListAsync();
+
+                var courseIds = courses.Select(c => c.Id).ToList();
+                int paidCoursesCount = courses.Count(c => !c.IsFree && c.Price > 0);
+                int freeCoursesCount = courses.Count(c => c.IsFree || c.Price == 0);
+
+                double instructorRating = 0;
+                var ratedCourses = courses.Where(c => (c.Rating ?? 0m) > 0).ToList();
+                if (ratedCourses.Any())
+                {
+                    instructorRating = Math.Round((double)ratedCourses.Average(c => c.Rating ?? 0m), 1);
+                }
+
+                // 2. High-Performance Metrics (Single Queries)
+                int totalStudentsCount = 0;
+                int totalLessonsCount = 0;
+                int totalQuizzesCount = 0;
+
+                if (courseIds.Count > 0)
+                {
+                    totalStudentsCount = await _context.CourseEnrollments
+                        .Where(e => courseIds.Contains(e.CourseId))
+                        .Select(e => e.StudentId)
+                        .Distinct()
+                        .CountAsync();
+
+                    totalLessonsCount = await _context.Lessons
+                        .Where(l => courseIds.Contains(l.CourseId))
+                        .CountAsync();
+
+                    var lessonQuizzesCount = await _context.CourseTasks
+                        .Where(t => t.LessonId.HasValue && _context.Lessons.Any(l => l.Id == t.LessonId.Value && courseIds.Contains(l.CourseId)))
+                        .Select(t => t.LessonId.Value)
+                        .Distinct()
+                        .CountAsync();
+
+                    var courseExamsCount = await _context.CourseTasks
+                        .Where(t => t.LessonId == null && t.CourseId.HasValue && courseIds.Contains(t.CourseId.Value))
+                        .Select(t => t.CourseId.Value)
+                        .Distinct()
+                        .CountAsync();
+
+                    totalQuizzesCount = lessonQuizzesCount + courseExamsCount;
+                }
 
             var enrollments = courseIds.Count == 0 ? new List<EnrollmentMetricDto>() : await _context.CourseEnrollments
                 .AsNoTracking()
@@ -195,10 +205,11 @@ namespace ELearningPlatform.Controllers
                 .ToDictionaryAsync(g => g.Key, g => g.Count());
 
             var studentCourseCompletions = allAttempts
-                .GroupBy(q => new { q.StudentId, CourseId = q.Lesson!.CourseId })
+                .Where(q => q.Lesson != null || q.CourseId.HasValue)
+                .GroupBy(q => new { q.StudentId, CourseId = q.Lesson != null ? q.Lesson.CourseId : q.CourseId!.Value })
                 .Where(g => lessonCountsPerCourse.ContainsKey(g.Key.CourseId) &&
                             lessonCountsPerCourse[g.Key.CourseId] > 0 &&
-                            g.Select(x => x.LessonId).Distinct().Count() >= lessonCountsPerCourse[g.Key.CourseId])
+                            g.Where(x => x.LessonId.HasValue).Select(x => x.LessonId!.Value).Distinct().Count() >= lessonCountsPerCourse[g.Key.CourseId])
                 .Select(g => g.Max(x => x.AttemptDate))
                 .ToList();
 
@@ -377,6 +388,12 @@ namespace ELearningPlatform.Controllers
                     submitted = courseCompletionsData
                 }
             });
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error in GetDashboardStats: {ex.Message} {ex.StackTrace}");
+                return StatusCode(500, new { message = ex.Message, stackTrace = ex.StackTrace });
+            }
         }
 
         // ==========================================
