@@ -46,6 +46,10 @@ namespace ELearningPlatform.Controllers
                     _context.CourseTasks.RemoveRange(existingTasks);
                 }
 
+                string examDesc = !string.IsNullOrWhiteSpace(model.DueDate) 
+                    ? $"Course Exam | Due: {model.DueDate.Trim()}" 
+                    : "Course Exam";
+
                 foreach (var q in model.Questions ?? new List<QuestionModel>())
                 {
                     var task = new CourseTask
@@ -53,7 +57,7 @@ namespace ELearningPlatform.Controllers
                         CourseId = cId,
                         LessonId = null,
                         Title = "Comprehensive Course Exam",
-                        Description = "Course Exam",
+                        Description = examDesc,
                         Question = q.Text,
                         ImageUrl = q.ImageUrl,
                         Options = q.Options != null ? string.Join("||", q.Options) : string.Empty,
@@ -195,6 +199,13 @@ namespace ELearningPlatform.Controllers
         public IActionResult GetCourseExam(int courseId)
         {
             var tasks = _context.CourseTasks.Where(t => t.CourseId == courseId && t.LessonId == null).ToList();
+            var firstTask = tasks.FirstOrDefault();
+            string? dueDate = null;
+            if (firstTask?.Description != null && firstTask.Description.StartsWith("Course Exam | Due: "))
+            {
+                dueDate = firstTask.Description.Substring("Course Exam | Due: ".Length).Trim();
+            }
+
             var result = tasks.Select(t => new
             {
                 id = t.Id,
@@ -204,7 +215,7 @@ namespace ELearningPlatform.Controllers
                 correctIndex = t.CorrectOptionIndex
             }).ToList();
 
-            return Ok(new { questions = result });
+            return Ok(new { questions = result, dueDate = dueDate });
         }
 
         [HttpDelete("course-exam/{courseId}")]
@@ -347,6 +358,37 @@ namespace ELearningPlatform.Controllers
                 .OrderByDescending(q => q.AttemptDate)
                 .Select(q => new
                 {
+                    lessonId = q.LessonId,
+                    courseId = q.CourseId,
+                    isCourseExam = q.LessonId == null,
+                    lessonTitle = q.Lesson != null ? q.Lesson.Title : (q.Course != null ? $"{q.Course.Title} (Comprehensive Exam)" : "Comprehensive Exam"),
+                    attemptNumber = q.AttemptNumber,
+                    score = q.Score,
+                    totalQuestions = q.TotalQuestions,
+                    date = q.AttemptDate
+                })
+                .ToList();
+
+            return Ok(results);
+        }
+
+        [HttpGet("my-results/{courseId}")]
+        [Authorize]
+        public IActionResult GetMyCourseResults(int courseId)
+        {
+            var userIdString = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrEmpty(userIdString) || !int.TryParse(userIdString, out int userId)) return Unauthorized();
+
+            var results = _context.QuizAttempts
+                .Include(q => q.Lesson)
+                .Include(q => q.Course)
+                .Where(q => q.StudentId == userId && (q.CourseId == courseId || (q.Lesson != null && q.Lesson.CourseId == courseId)))
+                .OrderByDescending(q => q.AttemptDate)
+                .Select(q => new
+                {
+                    lessonId = q.LessonId,
+                    courseId = q.CourseId,
+                    isCourseExam = q.LessonId == null,
                     lessonTitle = q.Lesson != null ? q.Lesson.Title : (q.Course != null ? $"{q.Course.Title} (Comprehensive Exam)" : "Comprehensive Exam"),
                     attemptNumber = q.AttemptNumber,
                     score = q.Score,
@@ -371,6 +413,7 @@ namespace ELearningPlatform.Controllers
     {
         public int? LessonId { get; set; }
         public int? CourseId { get; set; }
+        public string? DueDate { get; set; }
         public List<QuestionModel> Questions { get; set; } = new();
     }
 
