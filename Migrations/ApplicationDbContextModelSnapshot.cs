@@ -267,6 +267,9 @@ namespace ELearningPlatform.Migrations
                     b.Property<int>("CorrectOptionIndex")
                         .HasColumnType("int");
 
+                    b.Property<int?>("CourseId")
+                        .HasColumnType("int");
+
                     b.Property<string>("Description")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
@@ -274,7 +277,7 @@ namespace ELearningPlatform.Migrations
                     b.Property<string>("ImageUrl")
                         .HasColumnType("nvarchar(max)");
 
-                    b.Property<int>("LessonId")
+                    b.Property<int?>("LessonId")
                         .HasColumnType("int");
 
                     b.Property<int?>("ModuleId")
@@ -450,7 +453,10 @@ namespace ELearningPlatform.Migrations
                     b.Property<int>("AttemptNumber")
                         .HasColumnType("int");
 
-                    b.Property<int>("LessonId")
+                    b.Property<int?>("CourseId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("LessonId")
                         .HasColumnType("int");
 
                     b.Property<int>("Score")
@@ -463,6 +469,8 @@ namespace ELearningPlatform.Migrations
                         .HasColumnType("int");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("CourseId");
 
                     b.HasIndex("LessonId");
 
@@ -772,17 +780,21 @@ namespace ELearningPlatform.Migrations
 
             modelBuilder.Entity("ELearningPlatform.Core.Entities.QuizAttempt", b =>
                 {
+                    b.HasOne("ELearningPlatform.Core.Entities.Course", "Course")
+                        .WithMany()
+                        .HasForeignKey("CourseId");
+
                     b.HasOne("ELearningPlatform.Core.Entities.Lesson", "Lesson")
                         .WithMany()
-                        .HasForeignKey("LessonId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
+                        .HasForeignKey("LessonId");
 
                     b.HasOne("ELearningPlatform.Core.Entities.User", "Student")
                         .WithMany()
                         .HasForeignKey("StudentId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+
+                    b.Navigation("Course");
 
                     b.Navigation("Lesson");
 

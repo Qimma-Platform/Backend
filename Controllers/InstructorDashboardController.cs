@@ -74,8 +74,8 @@ namespace ELearningPlatform.Controllers
                     .CountAsync();
 
                 totalQuizzesCount = await _context.QuizAttempts
-                    .Where(qa => qa.Lesson != null && courseIds.Contains(qa.Lesson.CourseId))
-                    .Select(qa => qa.LessonId)
+                    .Where(qa => (qa.Lesson != null && courseIds.Contains(qa.Lesson.CourseId)) || (qa.CourseId.HasValue && courseIds.Contains(qa.CourseId.Value)))
+                    .Select(qa => qa.LessonId ?? qa.CourseId)
                     .Distinct()
                     .CountAsync();
             }
@@ -99,13 +99,14 @@ namespace ELearningPlatform.Controllers
                 .AsNoTracking()
                 .Include(q => q.Student)
                 .Include(q => q.Lesson)
-                .Where(q => q.Lesson != null && courseIds.Contains(q.Lesson.CourseId))
+                .Include(q => q.Course)
+                .Where(q => (q.Lesson != null && courseIds.Contains(q.Lesson.CourseId)) || (q.CourseId.HasValue && courseIds.Contains(q.CourseId.Value)))
                 .OrderByDescending(q => q.AttemptDate)
                 .ToListAsync();
 
             // Deduplicate: Each student completing a quiz for a lesson only appears once (latest attempt)
             var deduplicatedAttempts = allAttempts
-                .GroupBy(q => new { q.StudentId, q.LessonId })
+                .GroupBy(q => new { q.StudentId, q.LessonId, q.CourseId })
                 .Select(g => g.OrderByDescending(q => q.AttemptDate).First())
                 .OrderByDescending(q => q.AttemptDate)
                 .Take(50)
@@ -114,8 +115,8 @@ namespace ELearningPlatform.Controllers
             var recentActivities = deduplicatedAttempts.Select(q => (dynamic)new
             {
                 type = "quiz",
-                messageAr = $"أنهى {(q.Student != null ? q.Student.Username : "طالب")} اختبار لدرس {(q.Lesson != null ? q.Lesson.Title : "غير معروف")} بدرجة {q.Score}",
-                messageEn = $"{(q.Student != null ? q.Student.Username : "Student")} completed {(q.Lesson != null ? q.Lesson.Title : "Unknown")} quiz with score {q.Score}",
+                messageAr = $"أنهى {(q.Student != null ? q.Student.Username : "طالب")} اختبار {(q.Lesson != null ? q.Lesson.Title : (q.Course != null ? q.Course.Title + " (شامل)" : "شامل"))} بدرجة {q.Score}",
+                messageEn = $"{(q.Student != null ? q.Student.Username : "Student")} completed {(q.Lesson != null ? q.Lesson.Title : (q.Course != null ? q.Course.Title + " (Exam)" : "Exam"))} with score {q.Score}",
                 date = DateTime.SpecifyKind(q.AttemptDate, DateTimeKind.Utc)
             }).ToList();
 
@@ -307,8 +308,8 @@ namespace ELearningPlatform.Controllers
                     if (c.TotalStudents > 0)
                     {
                         var completedAttemptsCount = await _context.QuizAttempts
-                            .Where(qa => qa.Lesson != null && qa.Lesson.CourseId == c.Id)
-                            .Select(qa => new { qa.StudentId, qa.LessonId })
+                            .Where(qa => (qa.Lesson != null && qa.Lesson.CourseId == c.Id) || (qa.CourseId.HasValue && qa.CourseId.Value == c.Id))
+                            .Select(qa => new { qa.StudentId, TargetId = qa.LessonId ?? qa.CourseId })
                             .Distinct()
                             .CountAsync();
 
