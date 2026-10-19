@@ -126,7 +126,7 @@ namespace ELearningPlatform.Controllers
                 string enrollTypeEn = isFree ? "Free" : $"Paid ({course.Price} EGP)";
 
                 decimal coursePaid = !isFree && course.Price > 0 ? (course.Price - (course.Price * course.DiscountPercentage / 100m)) : 0m;
-                decimal teacherProfit = Math.Round(coursePaid * 0.8m, 2);
+                decimal teacherProfit = Math.Round(coursePaid * 0.9m, 2);
 
                 string teacherMsgAr = isFree
                     ? $"طالب جديد انضم! لقد قام الطالب '{studentDisplay}' بالاشتراك في الكورس المجاني '{course.Title}'"
@@ -163,7 +163,7 @@ namespace ELearningPlatform.Controllers
                     var inst = await _context.Users.FindAsync(course.InstructorId);
                     if (inst != null)
                     {
-                        inst.WalletBalance += actualPaid * 0.8m;
+                        inst.WalletBalance += actualPaid * 0.9m;
                     }
                     _context.PaymentTransactions.Add(new ELearningPlatform.Core.Entities.PaymentTransaction
                     {

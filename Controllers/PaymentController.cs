@@ -251,7 +251,7 @@ namespace ELearningPlatform.Controllers
                             var student = await _context.Users.FindAsync(studentId);
                             string sName = student?.Username ?? "طالب";
 
-                            decimal instructorShare = totalPaid * 0.80m;
+                            decimal instructorShare = totalPaid * 0.90m;
                             var instructor = await _context.Users.FindAsync(course.InstructorId);
                             if (instructor != null)
                             {
@@ -273,7 +273,7 @@ namespace ELearningPlatform.Controllers
                                 EnrolledAt = DateTime.UtcNow
                             });
 
-                            decimal platformShare = totalPaid * 0.20m;
+                            decimal platformShare = totalPaid * 0.10m;
 
                             // إرسال إشعار للمعلم بانضمام طالب جديد
                             var notifyTeacher = new Notification

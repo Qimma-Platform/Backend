@@ -51,6 +51,7 @@ namespace ELearningPlatform.Infrastructure.Services
                 Email = request.Email,
                 PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password),
                 Role = request.Role,
+                GradeLevel = request.GradeLevel,
                 IsEmailConfirmed = false,
                 OtpCode = otp,
                 OtpExpiry = DateTime.UtcNow.AddMinutes(15)

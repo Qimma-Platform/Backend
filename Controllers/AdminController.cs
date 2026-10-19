@@ -236,7 +236,7 @@ namespace ELearningPlatform.Controllers
                             ? Math.Round(course.Price - (course.Price * course.DiscountPercentage / 100m), 2)
                             : course.Price;
 
-                        decimal instructorShare = Math.Round(actualPaid * 0.8m, 2);
+                        decimal instructorShare = Math.Round(actualPaid * 0.9m, 2);
                         if (course.Instructor != null)
                         {
                             course.Instructor.WalletBalance += instructorShare;
@@ -495,6 +495,67 @@ namespace ELearningPlatform.Controllers
             return Ok(list);
         }
 
+        [HttpGet("teacher-earnings")]
+        public async Task<IActionResult> GetTeacherEarnings([FromQuery] string? search)
+        {
+            if (!IsAdmin()) return Forbid();
+
+            await EnsurePaidEnrollmentTransactionsAsync();
+
+            var teachersQuery = _context.Users
+                .AsNoTracking()
+                .Where(u => (int)u.Role == 1);
+
+            if (!string.IsNullOrWhiteSpace(search))
+            {
+                var s = search.Trim().ToLower();
+                teachersQuery = teachersQuery.Where(u =>
+                    u.Username.ToLower().Contains(s) ||
+                    u.Email.ToLower().Contains(s) ||
+                    (u.PhoneNumber != null && u.PhoneNumber.Contains(s)));
+            }
+
+            var teachers = await teachersQuery.OrderByDescending(u => u.Id).ToListAsync();
+            var teacherIds = teachers.Select(t => t.Id).ToList();
+
+            var allCourses = await _context.Courses
+                .AsNoTracking()
+                .Where(c => teacherIds.Contains(c.InstructorId))
+                .ToListAsync();
+
+            var allPaidTx = await _context.PaymentTransactions
+                .AsNoTracking()
+                .Where(p => teacherIds.Contains(p.InstructorId))
+                .ToListAsync();
+
+            var result = teachers.Select(t =>
+            {
+                var teacherTx = allPaidTx.Where(p => p.InstructorId == t.Id).ToList();
+                var coursesCount = allCourses.Count(c => c.InstructorId == t.Id);
+                var paidStudentsCount = teacherTx.Count;
+                var totalPaid = teacherTx.Sum(p => p.AmountPaid);
+                var teacherDues = Math.Round(totalPaid * 0.90m, 2);
+                var platformDues = totalPaid - teacherDues;
+
+                return new AdminTeacherEarningsDto
+                {
+                    TeacherId = t.Id,
+                    TeacherName = t.Username,
+                    Email = t.Email,
+                    PhoneNumber = t.PhoneNumber,
+                    ProfileImage = t.ProfileImage,
+                    CoursesCount = coursesCount,
+                    PaidStudentsCount = paidStudentsCount,
+                    TotalPaid = totalPaid,
+                    TeacherDues = teacherDues,
+                    PlatformDues = platformDues,
+                    WalletBalance = t.WalletBalance
+                };
+            }).ToList();
+
+            return Ok(result);
+        }
+
         // ==========================================
         // 1.2 ADMIN ACCOUNT PROFILE
         // ==========================================
@@ -581,6 +642,7 @@ namespace ELearningPlatform.Controllers
                     Role = (int)u.Role,
                     RoleName = "Student",
                     TotalXP = u.TotalXP,
+                    GradeLevel = u.GradeLevel,
                     EnrolledCoursesCount = _context.CourseEnrollments.Count(ce => ce.StudentId == u.Id),
                     IsEmailConfirmed = u.IsEmailConfirmed
                 }).ToListAsync();
@@ -667,6 +729,7 @@ namespace ELearningPlatform.Controllers
 
             if (!string.IsNullOrWhiteSpace(dto.Username)) student.Username = dto.Username.Trim();
             if (dto.TotalXP.HasValue) student.TotalXP = dto.TotalXP.Value;
+            if (dto.GradeLevel != null) student.GradeLevel = dto.GradeLevel;
 
             // Email, Phone, and Password cannot be modified by Admin (Req 10)
 
@@ -1199,7 +1262,7 @@ namespace ELearningPlatform.Controllers
                     : course.Price;
 
                 var instructor = await _context.Users.FindAsync(course.InstructorId);
-                decimal instructorShare = Math.Round(actualPaid * 0.8m, 2);
+                decimal instructorShare = Math.Round(actualPaid * 0.9m, 2);
                 decimal platformShare = actualPaid - instructorShare;
                 if (instructor != null)
                 {

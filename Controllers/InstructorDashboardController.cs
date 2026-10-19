@@ -130,18 +130,18 @@ namespace ELearningPlatform.Controllers
 
             if (persistentPayments.Any())
             {
-                totalRevenue = persistentPayments.Sum(p => p.AmountPaid * 0.8m);
-                monthlyRevenue = persistentPayments.Where(p => p.EnrolledAt >= currentMonthStart).Sum(p => p.AmountPaid * 0.8m);
+                totalRevenue = persistentPayments.Sum(p => p.AmountPaid * 0.9m);
+                monthlyRevenue = persistentPayments.Where(p => p.EnrolledAt >= currentMonthStart).Sum(p => p.AmountPaid * 0.9m);
             }
             else
             {
                 totalRevenue = enrollments
                     .Where(e => !e.CourseIsFree)
-                    .Sum(e => (e.CoursePrice * (1m - (e.CourseDiscount / 100m))) * 0.8m);
+                    .Sum(e => (e.CoursePrice * (1m - (e.CourseDiscount / 100m))) * 0.9m);
 
                 monthlyRevenue = enrollments
                     .Where(e => !e.CourseIsFree && e.EnrolledAt >= currentMonthStart)
-                    .Sum(e => (e.CoursePrice * (1m - (e.CourseDiscount / 100m))) * 0.8m);
+                    .Sum(e => (e.CoursePrice * (1m - (e.CourseDiscount / 100m))) * 0.9m);
             }
 
             if (instructor.WalletBalance > totalRevenue)
@@ -171,7 +171,7 @@ namespace ELearningPlatform.Controllers
                     {
                         studentName = p.StudentName,
                         courseTitle = p.CourseTitle,
-                        amount = Math.Round(p.AmountPaid * 0.8m, 2),
+                        amount = Math.Round(p.AmountPaid * 0.9m, 2),
                         date = DateTime.SpecifyKind(p.EnrolledAt, DateTimeKind.Utc)
                     })
                     .ToList()
@@ -182,7 +182,7 @@ namespace ELearningPlatform.Controllers
                     {
                         studentName = e.StudentUsername,
                         courseTitle = e.CourseTitle,
-                        amount = e.CourseIsFree ? 0 : Math.Round((e.CoursePrice * (1m - (e.CourseDiscount / 100m))) * 0.8m, 2),
+                        amount = e.CourseIsFree ? 0 : Math.Round((e.CoursePrice * (1m - (e.CourseDiscount / 100m))) * 0.9m, 2),
                         date = DateTime.SpecifyKind(e.EnrolledAt, DateTimeKind.Utc)
                     })
                     .ToList();
@@ -482,7 +482,7 @@ namespace ELearningPlatform.Controllers
                     : course.Price;
 
                 var instructor = await _context.Users.FindAsync(course.InstructorId);
-                decimal instructorShare = Math.Round(actualPaid * 0.8m, 2);
+                decimal instructorShare = Math.Round(actualPaid * 0.9m, 2);
                 decimal platformShare = actualPaid - instructorShare;
                 if (instructor != null)
                 {
@@ -605,7 +605,7 @@ namespace ELearningPlatform.Controllers
                             ? Math.Round(course.Price - (course.Price * course.DiscountPercentage / 100m), 2)
                             : course.Price;
 
-                        decimal instructorShare = Math.Round(actualPaid * 0.8m, 2);
+                        decimal instructorShare = Math.Round(actualPaid * 0.9m, 2);
                         if (course.Instructor != null)
                         {
                             course.Instructor.WalletBalance += instructorShare;

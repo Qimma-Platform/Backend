@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using ELearningPlatform.Core.Enums;
 
@@ -18,6 +18,7 @@ namespace ELearningPlatform.Core.Entities
         public string? Specialization { get; set; }
         public string? CoverImage { get; set; }
         public decimal WalletBalance { get; set; } = 0;
+        public string? GradeLevel { get; set; }
 
         public bool IsEmailConfirmed { get; set; } = false;
         public string? OtpCode { get; set; }

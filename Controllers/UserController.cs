@@ -39,7 +39,8 @@ namespace ELearningPlatform.Controllers
                 CoverImage = string.IsNullOrWhiteSpace(user.CoverImage) ? "/assets/images/default-cover.jpg" : user.CoverImage,
                 user.TotalXP,
                 user.Role,
-                user.Specialization
+                user.Specialization,
+                user.GradeLevel
             });
         }
 
@@ -57,6 +58,10 @@ namespace ELearningPlatform.Controllers
             user.PhoneNumber = model.PhoneNumber;
             user.Bio = model.Bio;
             user.Specialization = model.Specialization;
+            if (model.GradeLevel != null)
+            {
+                user.GradeLevel = model.GradeLevel;
+            }
 
             if (!string.IsNullOrWhiteSpace(model.NewPassword))
             {
@@ -268,6 +273,7 @@ namespace ELearningPlatform.Controllers
         public string PhoneNumber { get; set; } = string.Empty;
         public string Bio { get; set; } = string.Empty;
         public string Specialization { get; set; } = string.Empty;
+        public string? GradeLevel { get; set; }
         public string? NewPassword { get; set; }
     }
 }

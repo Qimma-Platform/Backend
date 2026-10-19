@@ -31,6 +31,7 @@ namespace ELearningPlatform.Core.DTOs
         public string? ProfileImage { get; set; }
         public string? Specialization { get; set; }
         public string? Bio { get; set; }
+        public string? GradeLevel { get; set; }
         public int Role { get; set; }
         public string RoleName { get; set; } = string.Empty;
         public int TotalXP { get; set; }
@@ -47,6 +48,7 @@ namespace ELearningPlatform.Core.DTOs
         public string? PhoneNumber { get; set; }
         public string? Specialization { get; set; }
         public string? Bio { get; set; }
+        public string? GradeLevel { get; set; }
         public int Role { get; set; } // 0 = Student, 1 = Instructor
     }
 
@@ -57,6 +59,7 @@ namespace ELearningPlatform.Core.DTOs
         public string? PhoneNumber { get; set; }
         public string? Specialization { get; set; }
         public string? Bio { get; set; }
+        public string? GradeLevel { get; set; }
         public int? TotalXP { get; set; }
         public string? NewPassword { get; set; }
     }
@@ -172,5 +175,20 @@ namespace ELearningPlatform.Core.DTOs
         public string Message { get; set; } = string.Empty;
         public bool IsRead { get; set; }
         public DateTime CreatedAt { get; set; }
+    }
+
+    public class AdminTeacherEarningsDto
+    {
+        public int TeacherId { get; set; }
+        public string TeacherName { get; set; } = string.Empty;
+        public string Email { get; set; } = string.Empty;
+        public string? PhoneNumber { get; set; }
+        public string? ProfileImage { get; set; }
+        public int CoursesCount { get; set; }
+        public int PaidStudentsCount { get; set; }
+        public decimal TotalPaid { get; set; }
+        public decimal TeacherDues { get; set; }
+        public decimal PlatformDues { get; set; }
+        public decimal WalletBalance { get; set; }
     }
 }
